@@ -17,9 +17,9 @@ import (
 	"entgo.io/ent/dialect"
 	entsqldialect "entgo.io/ent/dialect/sql"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/config"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/migrate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/migrate"
 
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"

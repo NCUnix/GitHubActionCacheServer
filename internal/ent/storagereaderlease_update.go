@@ -10,9 +10,9 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagelocation"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagereaderlease"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 )
 
 // StorageReaderLeaseUpdate is the builder for updating StorageReaderLease entities.

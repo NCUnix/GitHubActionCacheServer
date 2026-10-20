@@ -8,8 +8,8 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
 )
 
 // UploadDelete is the builder for deleting a Upload entity.

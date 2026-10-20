@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/storage"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
 )
 
 func Enqueue(ctx context.Context, db *ent.Client, folderName string) (*ent.StorageDeletion, error) {

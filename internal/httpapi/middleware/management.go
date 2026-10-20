@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/httpapi/managementauth"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/httpapi/response"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/managementauth"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/response"
 	"github.com/gin-gonic/gin"
 )
 

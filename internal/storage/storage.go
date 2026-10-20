@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 )
 
 const (

@@ -9,12 +9,12 @@ import (
 	"strconv"
 
 	"entgo.io/ent/dialect/sql"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/cachekey"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/cacheentry"
-	entpredicate "github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagelocation"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/httpapi/response"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/cachekey"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	entpredicate "github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/response"
 	"github.com/gin-gonic/gin"
 )
 

@@ -9,7 +9,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagedeletion"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 )
 
 // StorageDeletionCreate is the builder for creating a StorageDeletion entity.

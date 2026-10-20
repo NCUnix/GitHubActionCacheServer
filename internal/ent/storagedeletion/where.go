@@ -4,7 +4,7 @@ package storagedeletion
 
 import (
 	"entgo.io/ent/dialect/sql"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.

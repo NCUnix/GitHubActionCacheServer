@@ -10,12 +10,12 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/cacheentry"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagedeletion"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagelocation"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagereaderlease"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
 )
 
 const (

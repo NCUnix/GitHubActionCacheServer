@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/testutil"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 

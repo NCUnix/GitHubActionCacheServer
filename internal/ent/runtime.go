@@ -3,11 +3,11 @@
 package ent
 
 import (
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/cacheentry"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/schema"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagedeletion"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagelocation"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/schema"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
 )
 
 // The init function reads all schema descriptors with runtime code

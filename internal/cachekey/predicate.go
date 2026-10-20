@@ -3,8 +3,8 @@ package cachekey
 import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/cacheentry"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 )
 
 // Exact matches a cache key without depending on the database's default

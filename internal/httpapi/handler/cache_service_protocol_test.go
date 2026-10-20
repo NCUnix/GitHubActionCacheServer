@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/auth"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )

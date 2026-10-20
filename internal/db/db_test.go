@@ -13,9 +13,9 @@ import (
 	"entgo.io/ent/dialect"
 	entschema "entgo.io/ent/dialect/sql/schema"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/config"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/cacheentry"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/migrate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/migrate"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 

@@ -9,8 +9,8 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagelocation"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagereaderlease"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 )
 
 // StorageReaderLeaseCreate is the builder for creating a StorageReaderLease entity.

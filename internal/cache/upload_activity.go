@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
 )
 
 const uploadActivityRenewalTimeout = 10 * time.Second

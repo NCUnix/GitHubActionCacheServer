@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/cache"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"

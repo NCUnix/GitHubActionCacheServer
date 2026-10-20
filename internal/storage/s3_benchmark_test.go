@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 )
 
 func BenchmarkS3ComposeObjects(b *testing.B) {

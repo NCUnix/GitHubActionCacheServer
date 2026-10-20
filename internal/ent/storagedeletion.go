@@ -8,7 +8,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/storagedeletion"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 )
 
 // StorageDeletion is the model entity for the StorageDeletion schema.

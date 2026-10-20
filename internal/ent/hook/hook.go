@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 )
 
 // The CacheEntryFunc type is an adapter to allow the use of ordinary

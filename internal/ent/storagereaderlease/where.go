@@ -5,7 +5,7 @@ package storagereaderlease
 import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/MxOrbit/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 )
 
 // ID filters vertices based on their ID field.
