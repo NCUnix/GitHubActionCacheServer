@@ -32,7 +32,7 @@ const (
 	DriverPostgres = "postgres"
 	DriverMySQL    = "mysql"
 
-	// First 63 bits of SHA-256("github.com/MxOrbit/GitHubActionCacheServer:schema-migration").
+	// First 63 bits of SHA-256("github.com/NCUnix/GitHubActionCacheServer:schema-migration").
 	postgresMigrationLockKey      = int64(2389201325396535817)
 	mysqlMigrationLockWaitSeconds = 10
 	migrationUnlockTimeout        = 5 * time.Second

@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package github.actions.results.api.v1;
 
-option go_package = "github.com/MxOrbit/GitHubActionCacheServer/internal/httpapi/twirp;twirp";
+option go_package = "github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/twirp;twirp";
 
 message CacheScope {
   string scope = 1;

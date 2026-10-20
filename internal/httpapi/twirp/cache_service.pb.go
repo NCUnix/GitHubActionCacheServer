@@ -546,7 +546,7 @@ const file_cache_service_proto_rawDesc = "" +
 	"\fCacheService\x12\x83\x01\n" +
 	"\x10CreateCacheEntry\x126.github.actions.results.api.v1.CreateCacheEntryRequest\x1a7.github.actions.results.api.v1.CreateCacheEntryResponse\x12\x9b\x01\n" +
 	"\x18FinalizeCacheEntryUpload\x12>.github.actions.results.api.v1.FinalizeCacheEntryUploadRequest\x1a?.github.actions.results.api.v1.FinalizeCacheEntryUploadResponse\x12\x9b\x01\n" +
-	"\x18GetCacheEntryDownloadURL\x12>.github.actions.results.api.v1.GetCacheEntryDownloadURLRequest\x1a?.github.actions.results.api.v1.GetCacheEntryDownloadURLResponseBIZGgithub.com/MxOrbit/GitHubActionCacheServer/internal/httpapi/twirp;twirpb\x06proto3"
+	"\x18GetCacheEntryDownloadURL\x12>.github.actions.results.api.v1.GetCacheEntryDownloadURLRequest\x1a?.github.actions.results.api.v1.GetCacheEntryDownloadURLResponseBIZGgithub.com/NCUnix/GitHubActionCacheServer/internal/httpapi/twirp;twirpb\x06proto3"
 
 var (
 	file_cache_service_proto_rawDescOnce sync.Once

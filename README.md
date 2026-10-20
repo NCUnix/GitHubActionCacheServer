@@ -1,7 +1,7 @@
 # GitHubActionCacheServer
 
-[![License](https://img.shields.io/github/license/MxOrbit/GitHubActionCacheServer)](https://github.com/MxOrbit/GitHubActionCacheServer/blob/main/LICENSE)
-[![Release](https://img.shields.io/github/v/release/MxOrbit/GitHubActionCacheServer?color=blueviolet&include_prereleases)](https://github.com/MxOrbit/GitHubActionCacheServer/releases)
+[![License](https://img.shields.io/github/license/NCUnix/GitHubActionCacheServer)](https://github.com/NCUnix/GitHubActionCacheServer/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/NCUnix/GitHubActionCacheServer?color=blueviolet&include_prereleases)](https://github.com/NCUnix/GitHubActionCacheServer/releases)
 [![Dockerhub](https://img.shields.io/docker/pulls/mmx233/action-cache-server)](https://hub.docker.com/r/mmx233/action-cache-server)
 
 A Go implementation of the GitHub Actions cache service protocol for self-hosted
@@ -15,10 +15,10 @@ by default. The only intentional compatibility gap is GCS storage support.
 ## Quick Start
 
 Download a prebuilt binary for your platform from
-[Releases](https://github.com/MxOrbit/GitHubActionCacheServer/releases):
+[Releases](https://github.com/NCUnix/GitHubActionCacheServer/releases):
 
 ```sh
-curl -LO https://github.com/MxOrbit/GitHubActionCacheServer/releases/latest/download/action-cache-server_linux_amd64.tar.gz
+curl -LO https://github.com/NCUnix/GitHubActionCacheServer/releases/latest/download/action-cache-server_linux_amd64.tar.gz
 tar -xzf action-cache-server_linux_amd64.tar.gz
 API_BASE_URL=http://localhost:3000 ./action-cache-server
 ```
