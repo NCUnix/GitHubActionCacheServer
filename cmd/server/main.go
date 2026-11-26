@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -142,8 +143,13 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
+		listener, err := net.Listen("tcp", server.Addr)
+		if err != nil {
+			errCh <- err
+			return
+		}
 		logger.Info().Str("addr", server.Addr).Msg("server listening")
-		errCh <- server.ListenAndServe()
+		errCh <- server.Serve(newStalledClientListener(listener, cfg.Server.DownloadIdleTimeout))
 	}()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

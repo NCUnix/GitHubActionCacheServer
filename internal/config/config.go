@@ -29,6 +29,8 @@ const (
 	DefaultOrphanedStorageGraceHours = 24
 	DefaultCacheOlderThanDays        = 90
 	MaximumCacheOlderThanDays        = 36500
+	DefaultDownloadIdleTimeoutMS     = 300000
+	MaximumDownloadIdleTimeoutMS     = math.MaxInt32
 )
 
 type Config struct {
@@ -46,6 +48,7 @@ type ServerConfig struct {
 	Addr                     string
 	APIBaseURL               string
 	DefaultActionsResultsURL string
+	DownloadIdleTimeout      time.Duration
 }
 
 type AuthConfig struct {
@@ -150,6 +153,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	downloadIdleTimeout, err := downloadIdleTimeoutEnv("DOWNLOAD_IDLE_TIMEOUT_MS", DefaultDownloadIdleTimeoutMS)
+	if err != nil {
+		return Config{}, err
+	}
 	tokenAudience, err := audienceListEnv("ACTIONS_TOKEN_AUDIENCE")
 	if err != nil {
 		return Config{}, err
@@ -171,6 +178,7 @@ func Load() (Config, error) {
 			Addr:                     tools.EnvOrDefault("ADDR", DefaultAddr),
 			APIBaseURL:               tools.EnvOrDefault("API_BASE_URL", ""),
 			DefaultActionsResultsURL: tools.EnvOrDefault("DEFAULT_ACTIONS_RESULTS_URL", DefaultActionsResultsURL),
+			DownloadIdleTimeout:      downloadIdleTimeout,
 		},
 		Auth: AuthConfig{
 			TokenIssuer:         tokenIssuer,
@@ -311,6 +319,23 @@ func cleanupOlderThanDaysEnv(key string, fallback int) (int, error) {
 		)
 	}
 	return int(value), nil
+}
+
+func downloadIdleTimeoutEnv(key string, fallback int64) (time.Duration, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return time.Duration(fallback) * time.Millisecond, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 || value > MaximumDownloadIdleTimeoutMS {
+		return 0, fmt.Errorf(
+			"%s must be an integer number of milliseconds from 0 through %d: %q",
+			key,
+			MaximumDownloadIdleTimeoutMS,
+			raw,
+		)
+	}
+	return time.Duration(value) * time.Millisecond, nil
 }
 
 func positiveDurationEnv(key string, fallback time.Duration) time.Duration {

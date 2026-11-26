@@ -13,6 +13,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("ADDR", "")
 	t.Setenv("API_BASE_URL", "")
 	t.Setenv("DEFAULT_ACTIONS_RESULTS_URL", "")
+	t.Setenv("DOWNLOAD_IDLE_TIMEOUT_MS", "")
 	t.Setenv("ACTIONS_TOKEN_ISSUER", "")
 	t.Setenv("GITHUB_ACTIONS_TOKEN_ISSUER", "")
 	t.Setenv("ACTIONS_TOKEN_JWKS_URL", "")
@@ -52,6 +53,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, DefaultAddr, cfg.Server.Addr)
 	require.Empty(t, cfg.Server.APIBaseURL)
 	require.Equal(t, DefaultActionsResultsURL, cfg.Server.DefaultActionsResultsURL)
+	require.Equal(t, 5*time.Minute, cfg.Server.DownloadIdleTimeout)
 	require.Equal(t, DefaultTokenIssuer, cfg.Auth.TokenIssuer)
 	require.Empty(t, cfg.Auth.TokenJWKSURL)
 	require.Nil(t, cfg.Auth.TokenAudience)
@@ -381,6 +383,42 @@ func TestLoadRejectsInvalidCleanupRetention(t *testing.T) {
 			require.Zero(t, cfg)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "CACHE_CLEANUP_OLDER_THAN_DAYS")
+			require.Contains(t, err.Error(), value)
+		})
+	}
+}
+
+func TestLoadDownloadIdleTimeout(t *testing.T) {
+	tests := []struct {
+		value string
+		want  time.Duration
+	}{
+		{value: "0", want: 0},
+		{value: "1500", want: 1500 * time.Millisecond},
+		{value: strconv.Itoa(MaximumDownloadIdleTimeoutMS), want: MaximumDownloadIdleTimeoutMS * time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv("DOWNLOAD_IDLE_TIMEOUT_MS", tt.value)
+
+			cfg, err := Load()
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg.Server.DownloadIdleTimeout)
+		})
+	}
+}
+
+func TestLoadRejectsInvalidDownloadIdleTimeout(t *testing.T) {
+	for _, value := range []string{"-1", "abc", "1.5", "2147483648"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("DOWNLOAD_IDLE_TIMEOUT_MS", value)
+
+			cfg, err := Load()
+
+			require.Zero(t, cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "DOWNLOAD_IDLE_TIMEOUT_MS")
 			require.Contains(t, err.Error(), value)
 		})
 	}
