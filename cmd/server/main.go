@@ -90,6 +90,7 @@ func main() {
 	verifier, err := auth.NewVerifier(backgroundCtx, auth.Options{
 		Issuer:         cfg.Auth.TokenIssuer,
 		JWKSURL:        cfg.Auth.TokenJWKSURL,
+		Audience:       cfg.Auth.TokenAudience,
 		SkipValidation: cfg.Auth.SkipTokenValidation,
 		Logger:         &logger,
 	})

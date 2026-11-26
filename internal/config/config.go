@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +51,7 @@ type ServerConfig struct {
 type AuthConfig struct {
 	TokenIssuer         string
 	TokenJWKSURL        string
+	TokenAudience       []string
 	SkipTokenValidation bool
 }
 
@@ -148,6 +150,10 @@ func Load() (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	tokenAudience, err := audienceListEnv("ACTIONS_TOKEN_AUDIENCE")
+	if err != nil {
+		return Config{}, err
+	}
 	tokenIssuer := strings.TrimRight(
 		tools.EnvOrDefault(
 			"ACTIONS_TOKEN_ISSUER",
@@ -169,6 +175,7 @@ func Load() (Config, error) {
 		Auth: AuthConfig{
 			TokenIssuer:         tokenIssuer,
 			TokenJWKSURL:        tokenJWKSURL,
+			TokenAudience:       tokenAudience,
 			SkipTokenValidation: tools.ParseBool(tools.EnvOrDefault("SKIP_TOKEN_VALIDATION", "false")),
 		},
 		DB: DBConfig{
@@ -320,10 +327,27 @@ func enumEnv(key, fallback string, allowed ...string) (string, error) {
 		return fallback, nil
 	}
 	value := strings.ToLower(strings.TrimSpace(raw))
-	for _, candidate := range allowed {
-		if value == candidate {
-			return value, nil
-		}
+	if slices.Contains(allowed, value) {
+		return value, nil
 	}
 	return "", fmt.Errorf("%s must be one of %s: %q", key, strings.Join(allowed, ", "), raw)
+}
+
+// audienceListEnv rejects a set value with no entries so that a typo cannot
+// silently switch off the audience check.
+func audienceListEnv(key string) ([]string, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return nil, nil
+	}
+	var audience []string
+	for entry := range strings.SplitSeq(raw, ",") {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			audience = append(audience, entry)
+		}
+	}
+	if len(audience) == 0 {
+		return nil, fmt.Errorf("%s must list at least one audience: %q", key, raw)
+	}
+	return audience, nil
 }

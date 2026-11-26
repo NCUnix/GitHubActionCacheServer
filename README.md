@@ -85,13 +85,14 @@ docker build -t mmx233/action-cache-server .
 
 ### Authentication
 
-| Variable                        | Default                                       | Description                                                                            |
-|---------------------------------|-----------------------------------------------|----------------------------------------------------------------------------------------|
-| `ACTIONS_TOKEN_ISSUER`          | `https://token.actions.githubusercontent.com` | Expected JWT issuer. Set this to the GHES Actions token issuer for GHES deployments.   |
-| `GITHUB_ACTIONS_TOKEN_ISSUER`   | empty                                         | Legacy alias for `ACTIONS_TOKEN_ISSUER`; ignored when the canonical variable is set.   |
-| `ACTIONS_TOKEN_JWKS_URL`        | discovered from the issuer                    | Explicit JWKS URL override; skips OIDC discovery.                                      |
-| `GITHUB_ACTIONS_TOKEN_JWKS_URL` | empty                                         | Legacy alias for `ACTIONS_TOKEN_JWKS_URL`; ignored when the canonical variable is set. |
-| `SKIP_TOKEN_VALIDATION`         | `false`                                       | Parses JWTs without signature verification. Intended for tests only.                   |
+| Variable                        | Default                                       | Description                                                                                                                                               |
+|---------------------------------|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ACTIONS_TOKEN_ISSUER`          | `https://token.actions.githubusercontent.com` | Expected JWT issuer. Set this to the GHES Actions token issuer for GHES deployments.                                                                      |
+| `GITHUB_ACTIONS_TOKEN_ISSUER`   | empty                                         | Legacy alias for `ACTIONS_TOKEN_ISSUER`; ignored when the canonical variable is set.                                                                      |
+| `ACTIONS_TOKEN_JWKS_URL`        | discovered from the issuer                    | Explicit JWKS URL override; skips OIDC discovery.                                                                                                         |
+| `GITHUB_ACTIONS_TOKEN_JWKS_URL` | empty                                         | Legacy alias for `ACTIONS_TOKEN_JWKS_URL`; ignored when the canonical variable is set.                                                                    |
+| `ACTIONS_TOKEN_AUDIENCE`        | empty                                         | Comma-separated list of accepted `aud` values. When set, the token must carry one of them; unset skips the check. A value with only commas fails startup. |
+| `SKIP_TOKEN_VALIDATION`         | `false`                                       | Parses JWTs without signature verification. Intended for tests only.                                                                                      |
 
 Unless explicitly overridden, the JWKS URL is read once at startup from the
 `jwks_uri` field of `{effective issuer}/.well-known/openid-configuration`. If
@@ -100,8 +101,9 @@ discovery fails, the server logs a warning and falls back to
 effective issuer before JWT validation and JWKS discovery.
 
 The token must contain `repository_id`, an `ac` claim with cache scopes, and a
-valid `exp` claim. A scope with permission `>= 2` is required for saves; scopes
-with permission `>= 1` are used for restores.
+valid `exp` claim. When `ACTIONS_TOKEN_AUDIENCE` is set, it must also contain an
+`aud` claim matching one of the listed values. A scope with permission `>= 2` is
+required for saves; scopes with permission `>= 1` are used for restores.
 
 ### Database
 

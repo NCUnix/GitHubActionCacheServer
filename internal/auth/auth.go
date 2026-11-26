@@ -50,12 +50,14 @@ type CacheScope struct {
 type Options struct {
 	Issuer         string
 	JWKSURL        string
+	Audience       []string
 	SkipValidation bool
 	Logger         *zerolog.Logger
 }
 
 type Verifier struct {
 	issuer         string
+	audience       []string
 	skipValidation bool
 	jwks           keyfunc.Keyfunc
 }
@@ -69,6 +71,7 @@ type claims struct {
 func NewVerifier(ctx context.Context, options Options) (*Verifier, error) {
 	verifier := &Verifier{
 		issuer:         options.Issuer,
+		audience:       options.Audience,
 		skipValidation: options.SkipValidation,
 	}
 	if options.SkipValidation {
@@ -182,15 +185,16 @@ func (v *Verifier) verify(ctx context.Context, tokenString string) (*claims, err
 		return claims, nil
 	}
 
-	token, err := jwt.ParseWithClaims(
-		tokenString,
-		claims,
-		v.keyfuncFor(ctx),
+	parserOptions := []jwt.ParserOption{
 		jwt.WithIssuer(v.issuer),
 		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
 		jwt.WithExpirationRequired(),
 		jwt.WithLeeway(tokenClockSkewLeeway),
-	)
+	}
+	if len(v.audience) > 0 {
+		parserOptions = append(parserOptions, jwt.WithAudience(v.audience...))
+	}
+	token, err := jwt.ParseWithClaims(tokenString, claims, v.keyfuncFor(ctx), parserOptions...)
 	if err != nil {
 		if errors.Is(err, ErrKeyUnavailable) {
 			return nil, err

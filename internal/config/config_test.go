@@ -17,6 +17,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS_TOKEN_ISSUER", "")
 	t.Setenv("ACTIONS_TOKEN_JWKS_URL", "")
 	t.Setenv("GITHUB_ACTIONS_TOKEN_JWKS_URL", "")
+	t.Setenv("ACTIONS_TOKEN_AUDIENCE", "")
 	t.Setenv("SKIP_TOKEN_VALIDATION", "")
 	t.Setenv("DB_DRIVER", "")
 	t.Setenv("DB_SQLITE_PATH", "")
@@ -53,6 +54,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, DefaultActionsResultsURL, cfg.Server.DefaultActionsResultsURL)
 	require.Equal(t, DefaultTokenIssuer, cfg.Auth.TokenIssuer)
 	require.Empty(t, cfg.Auth.TokenJWKSURL)
+	require.Nil(t, cfg.Auth.TokenAudience)
 	require.False(t, cfg.Auth.SkipTokenValidation)
 	require.Equal(t, "sqlite", cfg.DB.Driver)
 	require.Equal(t, ".data/sqlite.db", cfg.DB.SQLitePath)
@@ -215,6 +217,42 @@ func TestLoadTokenIssuerConfiguration(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tt.wantIssuer, cfg.Auth.TokenIssuer)
 			require.Equal(t, tt.wantJWKSURL, cfg.Auth.TokenJWKSURL)
+		})
+	}
+}
+
+func TestLoadTokenAudience(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  []string
+	}{
+		{name: "single audience", value: "https://github.com/my-org", want: []string{"https://github.com/my-org"}},
+		{name: "multiple audiences", value: "a,b", want: []string{"a", "b"}},
+		{name: "trims spaces and drops empty entries", value: " a , ,b ", want: []string{"a", "b"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ACTIONS_TOKEN_AUDIENCE", tt.value)
+
+			cfg, err := Load()
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg.Auth.TokenAudience)
+		})
+	}
+}
+
+func TestLoadRejectsTokenAudienceWithoutEntries(t *testing.T) {
+	for _, value := range []string{",", ", ,", " "} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("ACTIONS_TOKEN_AUDIENCE", value)
+
+			cfg, err := Load()
+
+			require.Zero(t, cfg)
+			require.ErrorContains(t, err, "ACTIONS_TOKEN_AUDIENCE must list at least one audience")
+			require.ErrorContains(t, err, value)
 		})
 	}
 }

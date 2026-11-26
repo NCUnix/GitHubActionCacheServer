@@ -20,12 +20,13 @@ import (
 
 const testIssuer = "https://token.actions.githubusercontent.com"
 
-func newJWKSVerifier(t *testing.T, jwks *testutil.JWKS) *Verifier {
+func newJWKSVerifier(t *testing.T, jwks *testutil.JWKS, audience ...string) *Verifier {
 	t.Helper()
 
 	verifier, err := NewVerifier(t.Context(), Options{
-		Issuer:  testIssuer,
-		JWKSURL: jwks.Server.URL,
+		Issuer:   testIssuer,
+		JWKSURL:  jwks.Server.URL,
+		Audience: audience,
 	})
 	require.NoError(t, err)
 	return verifier
@@ -246,6 +247,41 @@ func TestCacheScopeRejectsWrongIssuer(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalidToken)
 }
 
+func TestCacheScopeAudience(t *testing.T) {
+	tests := []struct {
+		name       string
+		audience   []string
+		tokenAud   any
+		wantJWTErr error
+	}{
+		{name: "string aud matches", audience: []string{"first", "second"}, tokenAud: "second"},
+		{name: "array aud matches", audience: []string{"first", "second"}, tokenAud: []string{"other", "first"}},
+		{name: "aud does not match", audience: []string{"first", "second"}, tokenAud: []string{"other"}, wantJWTErr: jwt.ErrTokenInvalidAudience},
+		{name: "aud missing", audience: []string{"first"}, wantJWTErr: jwt.ErrTokenRequiredClaimMissing},
+		{name: "audience not configured", tokenAud: "anything"},
+	}
+
+	jwks := testutil.NewJWKS(t)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			verifier := newJWKSVerifier(t, jwks, tt.audience...)
+			claims := validClaims()
+			if tt.tokenAud != nil {
+				claims["aud"] = tt.tokenAud
+			}
+
+			scope, err := verifier.CacheScope(t.Context(), bearer(jwks.Sign(t, jwks.KID, claims)))
+			if tt.wantJWTErr != nil {
+				require.ErrorIs(t, err, ErrInvalidToken)
+				require.ErrorIs(t, err, tt.wantJWTErr)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "123", scope.RepoID)
+		})
+	}
+}
+
 func TestNewVerifierRejectsMalformedJWKSURL(t *testing.T) {
 	_, err := NewVerifier(context.Background(), Options{
 		Issuer:  testIssuer,
@@ -277,6 +313,20 @@ func TestCacheScopeSkipValidationDecodesWithoutVerification(t *testing.T) {
 	require.NoError(t, err)
 
 	scope, err := verifier.CacheScope(context.Background(), bearer(signed))
+	require.NoError(t, err)
+	require.Equal(t, "123", scope.RepoID)
+}
+
+func TestCacheScopeSkipValidationIgnoresAudience(t *testing.T) {
+	verifier, err := NewVerifier(t.Context(), Options{SkipValidation: true, Audience: []string{"expected"}})
+	require.NoError(t, err)
+
+	claims := validClaims()
+	claims["aud"] = "other"
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte("mock-secret-key"))
+	require.NoError(t, err)
+
+	scope, err := verifier.CacheScope(t.Context(), bearer(signed))
 	require.NoError(t, err)
 	require.Equal(t, "123", scope.RepoID)
 }
