@@ -2,12 +2,10 @@ package handler
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/baseurl"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/response"
 	twirppb "github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/twirp"
@@ -89,21 +87,14 @@ func (h *Handler) CreateCacheEntry(c *gin.Context) {
 
 	upload, err := h.cache.CreateUpload(c.Request.Context(), body.cacheKey(), body.cacheVersion(), scope)
 	if err != nil {
-		// ok:false is a 200 response: a protobuf client cannot parse
-		// writeCacheError's JSON body as its response message.
-		if errors.Is(err, cache.ErrUploadAlreadyExists) {
-			h.logExpectedCacheError(c, err)
-			writeCacheResponse(c, wireFormat, response.CacheMiss(), &twirppb.CreateCacheEntryResponse{Ok: false})
-			return
-		}
-		h.writeCacheError(c, err)
+		h.writeTwirpCacheError(c, err)
 		return
 	}
 
 	base := baseurl.FromRequest(c.Request, h.cfg.Server.APIBaseURL)
 	uploadURL, err := h.uploadSigner.SignUpload(base+"/devstoreaccount1/upload/"+formatInt64(upload.UploadID), upload.UploadID)
 	if err != nil {
-		response.InternalError(c, err)
+		response.TwirpInternalError(c, err)
 		return
 	}
 	writeCacheResponse(
@@ -135,11 +126,11 @@ func (h *Handler) GetCacheEntryDownloadURL(c *gin.Context) {
 		},
 	)
 	if err != nil {
-		h.writeCacheError(c, err)
+		h.writeTwirpCacheError(c, err)
 		return
 	}
 	if fallbackSignErr != nil {
-		response.InternalError(c, fallbackSignErr)
+		response.TwirpInternalError(c, fallbackSignErr)
 		return
 	}
 	h.metrics.RecordCacheRequest(match != nil)
@@ -173,7 +164,7 @@ func (h *Handler) FinalizeCacheEntryUpload(c *gin.Context) {
 
 	uploadID, err := h.cache.CompleteUpload(c.Request.Context(), body.cacheKey(), body.cacheVersion(), scope)
 	if err != nil {
-		h.writeCacheError(c, err)
+		h.writeTwirpCacheError(c, err)
 		return
 	}
 	h.metrics.RecordCacheUpload()

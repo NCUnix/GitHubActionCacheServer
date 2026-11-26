@@ -360,8 +360,12 @@ func TestRerunSkipsUploadForExistingCacheEntry(t *testing.T) {
 
 	rec := postJSON(t, app.router, createCacheEntryPath, token, createBody)
 
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.JSONEq(t, `{"ok":false}`, rec.Body.String())
+	require.Equal(t, http.StatusConflict, rec.Code)
+	require.JSONEq(
+		t,
+		`{"code":"already_exists","msg":"cache entry with the same key, version, and scope already exists"}`,
+		rec.Body.String(),
+	)
 	require.Zero(t, app.db.Upload.Query().CountX(context.Background()))
 	entry := app.db.CacheEntry.Query().OnlyX(context.Background())
 	require.Equal(t, locationID, entry.LocationId)

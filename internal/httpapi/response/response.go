@@ -99,6 +99,46 @@ type ErrorPayload struct {
 	Error string `json:"error"`
 }
 
+type TwirpErrorPayload struct {
+	Code TwirpCode `json:"code"`
+	Msg  string    `json:"msg"`
+}
+
+func (TwirpErrorPayload) responsePayload() {}
+
+type TwirpCode string
+
+const (
+	TwirpMalformed        TwirpCode = "malformed"
+	TwirpInvalidArgument  TwirpCode = "invalid_argument"
+	TwirpUnauthenticated  TwirpCode = "unauthenticated"
+	TwirpPermissionDenied TwirpCode = "permission_denied"
+	TwirpNotFound         TwirpCode = "not_found"
+	TwirpAlreadyExists    TwirpCode = "already_exists"
+	TwirpInternal         TwirpCode = "internal"
+	TwirpUnavailable      TwirpCode = "unavailable"
+)
+
+// HTTPStatus returns the HTTP status the Twirp spec assigns to code.
+func (code TwirpCode) HTTPStatus() int {
+	switch code {
+	case TwirpMalformed, TwirpInvalidArgument:
+		return http.StatusBadRequest
+	case TwirpUnauthenticated:
+		return http.StatusUnauthorized
+	case TwirpPermissionDenied:
+		return http.StatusForbidden
+	case TwirpNotFound:
+		return http.StatusNotFound
+	case TwirpAlreadyExists:
+		return http.StatusConflict
+	case TwirpUnavailable:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
 const InternalServerErrorMessage = "internal server error"
 
 func JSON[T Payload](c *gin.Context, response JSONResponse[T]) {
@@ -193,4 +233,17 @@ func RecordInternalError(c *gin.Context, err error) {
 
 func NotImplemented() JSONResponse[ErrorPayload] {
 	return Error(http.StatusNotImplemented, "not implemented")
+}
+
+func TwirpError(code TwirpCode, message string) JSONResponse[TwirpErrorPayload] {
+	return jsonResponse[TwirpErrorPayload]{
+		status:  code.HTTPStatus(),
+		payload: TwirpErrorPayload{Code: code, Msg: message},
+	}
+}
+
+// TwirpInternalError is InternalError for Twirp routes.
+func TwirpInternalError(c *gin.Context, err error) {
+	RecordInternalError(c, err)
+	JSON(c, TwirpError(TwirpInternal, InternalServerErrorMessage))
 }

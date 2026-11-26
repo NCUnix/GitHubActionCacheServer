@@ -34,7 +34,7 @@ func TestCacheServiceRequiresBearerToken(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusUnauthorized, rec.Code)
-	require.JSONEq(t, `{"ok":false,"error":"unauthorized"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":"unauthenticated","msg":"unauthorized"}`, rec.Body.String())
 }
 
 func TestCacheServiceReturnsUnavailableWhenKeyUnknown(t *testing.T) {
@@ -73,7 +73,7 @@ func TestCacheServiceReturnsUnavailableWhenKeyUnknown(t *testing.T) {
 
 	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	require.Equal(t, "300", rec.Header().Get("Retry-After"))
-	require.JSONEq(t, `{"ok":false,"error":"service unavailable"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":"unavailable","msg":"service unavailable"}`, rec.Body.String())
 }
 
 func TestCacheServiceAcceptsDecodedActionsTokenWhenValidationIsSkipped(t *testing.T) {
@@ -91,7 +91,7 @@ func TestCacheServiceAcceptsDecodedActionsTokenWhenValidationIsSkipped(t *testin
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
-	require.JSONEq(t, `{"ok":false,"error":"invalid body"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":"malformed","msg":"invalid body"}`, rec.Body.String())
 }
 
 func TestUnsignedUploadURLIsRejected(t *testing.T) {

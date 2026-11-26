@@ -2,7 +2,6 @@ package handler
 
 import (
 	"errors"
-	"net/http"
 	"time"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
@@ -71,32 +70,45 @@ func New(options Options) *Handler {
 }
 
 func (h *Handler) writeCacheError(c *gin.Context, err error) {
+	code, message, expected := classifyCacheError(err)
+	if !expected {
+		response.InternalError(c, err)
+		return
+	}
+	h.logExpectedCacheError(c, err)
+	response.JSON(c, response.Error(code.HTTPStatus(), message))
+}
+
+func (h *Handler) writeTwirpCacheError(c *gin.Context, err error) {
+	code, message, expected := classifyCacheError(err)
+	if !expected {
+		response.TwirpInternalError(c, err)
+		return
+	}
+	h.logExpectedCacheError(c, err)
+	response.JSON(c, response.TwirpError(code, message))
+}
+
+// classifyCacheError maps a cache service error to its public Twirp code and
+// message; expected is false for internal failures whose cause must stay private.
+func classifyCacheError(err error) (code response.TwirpCode, message string, expected bool) {
 	switch {
 	case errors.Is(err, cache.ErrNoWriteScope):
-		h.logExpectedCacheError(c, err)
-		response.JSON(c, response.Error(http.StatusForbidden, cache.ErrNoWriteScope.Error()))
+		return response.TwirpPermissionDenied, cache.ErrNoWriteScope.Error(), true
 	case errors.Is(err, cache.ErrUploadAlreadyExists):
-		h.logExpectedCacheError(c, err)
-		response.JSON(c, response.CacheMiss())
-	case errors.Is(err, cache.ErrUploadNotFound), errors.Is(err, cache.ErrCacheNotFound):
-		h.logExpectedCacheError(c, err)
-		message := cache.ErrCacheNotFound.Error()
-		if errors.Is(err, cache.ErrUploadNotFound) {
-			message = cache.ErrUploadNotFound.Error()
-		}
-		response.JSON(c, response.Error(http.StatusNotFound, message))
-	case errors.Is(err, cache.ErrNoPartsUploaded), errors.Is(err, cache.ErrPartCountMismatch), errors.Is(err, cache.ErrBlockListTooLarge):
-		h.logExpectedCacheError(c, err)
-		message := cache.ErrNoPartsUploaded.Error()
-		switch {
-		case errors.Is(err, cache.ErrPartCountMismatch):
-			message = cache.ErrPartCountMismatch.Error()
-		case errors.Is(err, cache.ErrBlockListTooLarge):
-			message = cache.ErrBlockListTooLarge.Error()
-		}
-		response.JSON(c, response.Error(http.StatusBadRequest, message))
+		return response.TwirpAlreadyExists, "cache entry with the same key, version, and scope already exists", true
+	case errors.Is(err, cache.ErrUploadNotFound):
+		return response.TwirpNotFound, cache.ErrUploadNotFound.Error(), true
+	case errors.Is(err, cache.ErrCacheNotFound):
+		return response.TwirpNotFound, cache.ErrCacheNotFound.Error(), true
+	case errors.Is(err, cache.ErrPartCountMismatch):
+		return response.TwirpInvalidArgument, cache.ErrPartCountMismatch.Error(), true
+	case errors.Is(err, cache.ErrBlockListTooLarge):
+		return response.TwirpInvalidArgument, cache.ErrBlockListTooLarge.Error(), true
+	case errors.Is(err, cache.ErrNoPartsUploaded):
+		return response.TwirpInvalidArgument, cache.ErrNoPartsUploaded.Error(), true
 	default:
-		response.InternalError(c, err)
+		return response.TwirpInternal, response.InternalServerErrorMessage, false
 	}
 }
 

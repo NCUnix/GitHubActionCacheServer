@@ -34,8 +34,38 @@ func TestBindCacheRequestRejectsOversizedBodies(t *testing.T) {
 			_, _, _, ok := bindCacheRequest(c, decodeCreateCacheEntryRequest)
 
 			require.False(t, ok)
-			require.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
-			require.JSONEq(t, `{"ok":false,"error":"request body too large"}`, recorder.Body.String())
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
+			require.JSONEq(t, `{"code":"malformed","msg":"request body too large"}`, recorder.Body.String())
+		})
+	}
+}
+
+func TestBindCacheRequestRejectsEmptyKeyAsTwirpInvalidArgument(t *testing.T) {
+	tests := []struct {
+		name        string
+		contentType string
+		body        []byte
+	}{
+		{name: "json", contentType: "application/json", body: []byte(`{"key":"","version":"v"}`)},
+		{name: "protobuf", contentType: protobufContentType, body: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, recorder := newCacheRequestTestContext(t, tt.contentType, bytes.NewReader(tt.body))
+			c.Set("cache_scope", auth.CacheScope{RepoID: "repository"})
+
+			_, _, _, ok := bindCacheRequest(c, decodeCreateCacheEntryRequest)
+
+			require.False(t, ok)
+			require.Equal(t, http.StatusBadRequest, recorder.Code)
+			require.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
+			require.JSONEq(
+				t,
+				`{"code":"invalid_argument","msg":"key and version must be non-empty strings"}`,
+				recorder.Body.String(),
+			)
 		})
 	}
 }
@@ -102,7 +132,7 @@ func TestBindCacheRequestFinalizeSizeBytesJSONForms(t *testing.T) {
 			require.Equal(t, tt.wantOK, ok)
 			if !tt.wantOK {
 				require.Equal(t, http.StatusBadRequest, recorder.Code)
-				require.JSONEq(t, `{"ok":false,"error":"invalid body"}`, recorder.Body.String())
+				require.JSONEq(t, `{"code":"malformed","msg":"invalid body"}`, recorder.Body.String())
 				return
 			}
 			require.Equal(t, cacheWireJSON, wireFormat)

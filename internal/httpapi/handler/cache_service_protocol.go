@@ -49,25 +49,25 @@ func bindCacheRequest[T keyedCacheRequest](
 	if err != nil {
 		var maxBytesError *http.MaxBytesError
 		if errors.As(err, &maxBytesError) {
-			response.JSON(c, response.Error(http.StatusRequestEntityTooLarge, "request body too large"))
+			response.JSON(c, response.TwirpError(response.TwirpMalformed, "request body too large"))
 			return body, auth.CacheScope{}, wireFormat, false
 		}
 		zerolog.Ctx(c.Request.Context()).Debug().
 			Err(err).
 			Str("wire_format", wireFormat.String()).
 			Msg("cache request body rejected")
-		response.JSON(c, response.Error(http.StatusBadRequest, "invalid body"))
+		response.JSON(c, response.TwirpError(response.TwirpMalformed, "invalid body"))
 		return body, auth.CacheScope{}, wireFormat, false
 	}
 	if body.cacheKey() == "" || body.cacheVersion() == "" {
-		response.JSON(c, response.Error(http.StatusBadRequest, "invalid body"))
+		response.JSON(c, response.TwirpError(response.TwirpInvalidArgument, "key and version must be non-empty strings"))
 		return body, auth.CacheScope{}, wireFormat, false
 	}
 
 	scope, ok := middleware.CacheScope(c)
 	if !ok {
 		response.RecordInternalError(c, errors.New("cache scope missing from authenticated request context"))
-		response.JSON(c, response.Error(http.StatusUnauthorized, "cache scope missing"))
+		response.JSON(c, response.TwirpError(response.TwirpUnauthenticated, "cache scope missing"))
 		return body, auth.CacheScope{}, wireFormat, false
 	}
 
@@ -95,7 +95,7 @@ func writeCacheResponse[T response.Payload](
 
 	body, err := proto.Marshal(protobufResponse)
 	if err != nil {
-		response.InternalError(c, err)
+		response.TwirpInternalError(c, err)
 		return
 	}
 	c.Data(jsonResponse.StatusCode(), protobufContentType, body)

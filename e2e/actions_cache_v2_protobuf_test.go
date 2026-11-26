@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -135,10 +136,15 @@ func TestProtobufRerunSkipsUploadForExistingCacheEntry(t *testing.T) {
 
 	rerunRec := postProtobuf(t, app.router, createCacheEntryPath, token, createRequest)
 
-	require.Equal(t, http.StatusOK, rerunRec.Code)
-	require.Equal(t, protobufMediaType, rerunRec.Header().Get("Content-Type"))
-	_, ok := protobufVarintField(decodeProtobufFields(t, rerunRec.Body.Bytes()), 1)
-	require.False(t, ok, "proto3 false is encoded as the absent default value")
+	require.Equal(t, http.StatusConflict, rerunRec.Code)
+	mediaType, _, err := mime.ParseMediaType(rerunRec.Header().Get("Content-Type"))
+	require.NoError(t, err)
+	require.Equal(t, "application/json", mediaType, "Twirp errors are JSON even for protobuf requests")
+	require.JSONEq(
+		t,
+		`{"code":"already_exists","msg":"cache entry with the same key, version, and scope already exists"}`,
+		rerunRec.Body.String(),
+	)
 	require.Zero(t, app.db.Upload.Query().CountX(context.Background()))
 }
 
@@ -199,6 +205,7 @@ func TestMalformedProtobufCacheRequestReturnsBadRequest(t *testing.T) {
 	rec := postProtobuf(t, router, createCacheEntryPath, actionsToken(t), []byte{0x12, 0x05, 'x'})
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.JSONEq(t, `{"code":"malformed","msg":"invalid body"}`, rec.Body.String())
 }
 
 func postProtobuf(

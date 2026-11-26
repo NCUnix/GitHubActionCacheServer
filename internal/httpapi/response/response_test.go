@@ -42,6 +42,11 @@ func TestJSONResponseBodyMarshal(t *testing.T) {
 			body: NotImplemented().Body(),
 			want: `{"ok":false,"error":"not implemented"}`,
 		},
+		{
+			name: "twirp error",
+			body: TwirpError(TwirpAlreadyExists, "cache entry already exists").Body(),
+			want: `{"code":"already_exists","msg":"cache entry already exists"}`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -54,16 +59,49 @@ func TestJSONResponseBodyMarshal(t *testing.T) {
 	}
 }
 
+func TestTwirpCodeHTTPStatus(t *testing.T) {
+	tests := map[TwirpCode]int{
+		TwirpMalformed:        http.StatusBadRequest,
+		TwirpInvalidArgument:  http.StatusBadRequest,
+		TwirpUnauthenticated:  http.StatusUnauthorized,
+		TwirpPermissionDenied: http.StatusForbidden,
+		TwirpNotFound:         http.StatusNotFound,
+		TwirpAlreadyExists:    http.StatusConflict,
+		TwirpInternal:         http.StatusInternalServerError,
+		TwirpUnavailable:      http.StatusServiceUnavailable,
+	}
+
+	for code, want := range tests {
+		t.Run(string(code), func(t *testing.T) {
+			require.Equal(t, want, code.HTTPStatus())
+			require.Equal(t, want, TwirpError(code, "message").StatusCode())
+		})
+	}
+}
+
 func TestInternalErrorHidesAndRecordsCause(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(recorder)
-	internalErr := errors.New("sensitive database detail")
+	tests := []struct {
+		name  string
+		write func(*gin.Context, error)
+		want  string
+	}{
+		{name: "legacy", write: InternalError, want: `{"ok":false,"error":"internal server error"}`},
+		{name: "twirp", write: TwirpInternalError, want: `{"code":"internal","msg":"internal server error"}`},
+	}
 
-	InternalError(c, internalErr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			internalErr := errors.New("sensitive database detail")
 
-	require.Equal(t, http.StatusInternalServerError, recorder.Code)
-	require.JSONEq(t, `{"ok":false,"error":"internal server error"}`, recorder.Body.String())
-	require.NotContains(t, recorder.Body.String(), internalErr.Error())
-	require.Len(t, c.Errors.ByType(gin.ErrorTypePrivate), 1)
-	require.ErrorIs(t, c.Errors[0].Err, internalErr)
+			tt.write(c, internalErr)
+
+			require.Equal(t, http.StatusInternalServerError, recorder.Code)
+			require.JSONEq(t, tt.want, recorder.Body.String())
+			require.NotContains(t, recorder.Body.String(), internalErr.Error())
+			require.Len(t, c.Errors.ByType(gin.ErrorTypePrivate), 1)
+			require.ErrorIs(t, c.Errors[0].Err, internalErr)
+		})
+	}
 }

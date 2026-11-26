@@ -309,8 +309,8 @@ func runCacheKeyMatching(t *testing.T, client *ent.Client, router http.Handler) 
 	newer := time.Now().Add(time.Hour).UnixMilli()
 	createCacheKeyMatchEntry(ctx, client, "lower-variant", "case-key", newer)
 
-	rerun := createCacheEntryResponse(t, router, token, upperBody)
-	require.False(t, rerun.OK)
+	rerun := postJSON(t, router, createCacheEntryPath, token, upperBody)
+	require.Equal(t, http.StatusConflict, rerun.Code)
 
 	caseVariant := createCacheEntryResponse(t, router, token, cacheBody("CASE-KEY"))
 	require.True(t, caseVariant.OK)

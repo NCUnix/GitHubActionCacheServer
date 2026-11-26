@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"errors"
-	"net/http"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/response"
@@ -23,14 +22,14 @@ func RequireCacheScope(verifier *auth.Verifier, logger zerolog.Logger) gin.Handl
 					Str("path", c.Request.URL.Path).
 					Msg("cache authentication key unavailable")
 				c.Header("Retry-After", "300")
-				response.JSON(c, response.Error(http.StatusServiceUnavailable, "service unavailable"))
+				response.JSON(c, response.TwirpError(response.TwirpUnavailable, "service unavailable"))
 			} else {
 				logger.Debug().
 					Err(err).
 					Str("method", c.Request.Method).
 					Str("path", c.Request.URL.Path).
 					Msg("cache authentication rejected")
-				response.JSON(c, response.Error(http.StatusUnauthorized, "unauthorized"))
+				response.JSON(c, response.TwirpError(response.TwirpUnauthenticated, "unauthorized"))
 			}
 			c.Abort()
 			return
