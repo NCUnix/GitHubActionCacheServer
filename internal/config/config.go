@@ -31,6 +31,9 @@ const (
 	MaximumCacheOlderThanDays        = 36500
 	DefaultDownloadIdleTimeoutMS     = 300000
 	MaximumDownloadIdleTimeoutMS     = math.MaxInt32
+
+	DefaultDirectDownloadURLTTLSeconds = 600
+	MaximumDirectDownloadURLTTLSeconds = 3600
 )
 
 type Config struct {
@@ -99,6 +102,7 @@ type StorageConfig struct {
 
 type CacheConfig struct {
 	EnableDirectDownloads     bool
+	DirectDownloadURLTTL      time.Duration
 	DownloadURLSigningSecret  string
 	MergeConcurrency          int
 	MaxSizeBytes              int64
@@ -154,6 +158,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	downloadIdleTimeout, err := downloadIdleTimeoutEnv("DOWNLOAD_IDLE_TIMEOUT_MS", DefaultDownloadIdleTimeoutMS)
+	if err != nil {
+		return Config{}, err
+	}
+	directDownloadURLTTL, err := directDownloadURLTTLEnv("DIRECT_DOWNLOAD_URL_TTL_SECONDS", DefaultDirectDownloadURLTTLSeconds)
 	if err != nil {
 		return Config{}, err
 	}
@@ -222,6 +230,7 @@ func Load() (Config, error) {
 		},
 		Cache: CacheConfig{
 			EnableDirectDownloads:     tools.ParseBool(tools.EnvOrDefault("ENABLE_DIRECT_DOWNLOADS", "false")),
+			DirectDownloadURLTTL:      directDownloadURLTTL,
 			DownloadURLSigningSecret:  tools.EnvOrDefault("DOWNLOAD_URL_SIGNING_SECRET", ""),
 			MergeConcurrency:          positiveIntEnv("CACHE_MERGE_CONCURRENCY", defaultMergeConcurrency()),
 			MaxSizeBytes:              cacheMaxSizeBytes,
@@ -336,6 +345,23 @@ func downloadIdleTimeoutEnv(key string, fallback int64) (time.Duration, error) {
 		)
 	}
 	return time.Duration(value) * time.Millisecond, nil
+}
+
+func directDownloadURLTTLEnv(key string, fallback int64) (time.Duration, error) {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return time.Duration(fallback) * time.Second, nil
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 1 || value > MaximumDirectDownloadURLTTLSeconds {
+		return 0, fmt.Errorf(
+			"%s must be an integer number of seconds from 1 through %d: %q",
+			key,
+			MaximumDirectDownloadURLTTLSeconds,
+			raw,
+		)
+	}
+	return time.Duration(value) * time.Second, nil
 }
 
 func positiveDurationEnv(key string, fallback time.Duration) time.Duration {

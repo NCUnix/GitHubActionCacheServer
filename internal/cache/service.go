@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	directDownloadTTL              = storagelifecycle.DirectDownloadLeaseDuration
 	lastDownloadedAtUpdateInterval = 10 * time.Minute
 	uploadHeartbeatInterval        = 30 * time.Second
 	partIndexDiscoveryTimeout      = 15 * time.Second
@@ -604,7 +603,7 @@ func (s *Service) GetCacheEntryWithDownloadURL(ctx context.Context, keys []strin
 						continue
 					}
 				}
-				url, signErr := direct.CreateDownloadURL(ctx, directObjectName, directDownloadTTL)
+				url, signErr := direct.CreateDownloadURL(ctx, directObjectName, s.lifecycle.DirectDownloadURLTTL())
 				if signErr != nil {
 					s.releaseReaderLease(lease.ID)
 					return nil, signErr

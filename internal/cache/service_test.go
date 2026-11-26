@@ -624,11 +624,36 @@ func TestSinglePartUsesPartsObjectForDirectDownload(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "direct://entry-id-folder/parts/0", result.DownloadURL)
 	require.Equal(t, "entry-id-folder/parts/0", adapter.objectName)
+	require.Equal(t, storagelifecycle.DirectDownloadURLTTL, adapter.ttl)
 	location = client.StorageLocation.GetX(ctx, result.CacheEntry.LocationId)
 	require.NotNil(t, location.LastDownloadedAt)
 	lease := client.StorageReaderLease.Query().OnlyX(ctx)
 	require.Equal(t, "parts", lease.Scope.String())
-	require.WithinDuration(t, time.Now().Add(storagelifecycle.DirectDownloadLeaseDuration), time.UnixMilli(lease.ExpiresAt), time.Second)
+	require.WithinDuration(t, time.Now().Add(storagelifecycle.DirectDownloadURLTTL+storagelifecycle.DirectDownloadLeaseMargin), time.UnixMilli(lease.ExpiresAt), time.Second)
+}
+
+func TestDirectDownloadSignsWithLifecycleURLTTL(t *testing.T) {
+	ctx, client, filesystem := newTestServiceDeps(t)
+	adapter := &directURLStorage{Adapter: filesystem}
+	service := NewService(Options{
+		DB:                    client,
+		Storage:               adapter,
+		EnableDirectDownloads: true,
+		Lifecycle:             storagelifecycle.NewWithOptions(client, storagelifecycle.Options{DirectDownloadURLTTL: time.Minute}),
+	})
+	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
+	location := client.StorageLocation.GetX(ctx, entry.LocationId)
+	require.NoError(t, filesystem.UploadStream(ctx, partObjectName(location.FolderName, 0), bytes.NewBufferString("data")))
+
+	result, err := service.GetCacheEntryWithDownloadURL(ctx, []string{"key"}, "version", writableScope(), func(string) string {
+		return "fallback"
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "direct://entry-id-folder/parts/0", result.DownloadURL)
+	require.Equal(t, time.Minute, adapter.ttl)
+	lease := client.StorageReaderLease.Query().OnlyX(ctx)
+	require.WithinDuration(t, time.Now().Add(time.Minute+10*time.Minute), time.UnixMilli(lease.ExpiresAt), time.Second)
 }
 
 func TestMultipartDirectLookupFallsBackWithoutReaderLeaseWrite(t *testing.T) {
@@ -1631,6 +1656,7 @@ func (s *failDeleteStorage) DeleteFolder(context.Context, string) error {
 type directURLStorage struct {
 	storage.Adapter
 	objectName string
+	ttl        time.Duration
 }
 
 type downloadErrorStorage struct {
@@ -1694,8 +1720,9 @@ func (s *blockingObjectExistsStorage) ObjectExists(ctx context.Context, objectNa
 	return s.Adapter.ObjectExists(ctx, objectName)
 }
 
-func (s *directURLStorage) CreateDownloadURL(_ context.Context, objectName string, _ time.Duration) (string, error) {
+func (s *directURLStorage) CreateDownloadURL(_ context.Context, objectName string, ttl time.Duration) (string, error) {
 	s.objectName = objectName
+	s.ttl = ttl
 	return "direct://" + objectName, nil
 }
 

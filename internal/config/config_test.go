@@ -37,6 +37,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("STORAGE_S3_UPLOAD_CONCURRENCY", "")
 	t.Setenv("STORAGE_S3_MULTIPART_ABORT_TIMEOUT", "")
 	t.Setenv("ENABLE_DIRECT_DOWNLOADS", "")
+	t.Setenv("DIRECT_DOWNLOAD_URL_TTL_SECONDS", "")
 	t.Setenv("DOWNLOAD_URL_SIGNING_SECRET", "")
 	t.Setenv("CACHE_MERGE_CONCURRENCY", "")
 	t.Setenv("CACHE_MAX_SIZE_BYTES", "")
@@ -73,6 +74,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.Equal(t, DefaultS3UploadConcurrency, cfg.Storage.S3UploadConcurrency)
 	require.Equal(t, DefaultS3MultipartAbortTimeout, cfg.Storage.S3MultipartAbortTimeout)
 	require.False(t, cfg.Cache.EnableDirectDownloads)
+	require.Equal(t, 10*time.Minute, cfg.Cache.DirectDownloadURLTTL)
 	require.Empty(t, cfg.Cache.DownloadURLSigningSecret)
 	require.Equal(t, runtime.NumCPU(), cfg.Cache.MergeConcurrency)
 	require.False(t, cfg.Cache.MaxSizeBytesConfigured)
@@ -419,6 +421,42 @@ func TestLoadRejectsInvalidDownloadIdleTimeout(t *testing.T) {
 			require.Zero(t, cfg)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "DOWNLOAD_IDLE_TIMEOUT_MS")
+			require.Contains(t, err.Error(), value)
+		})
+	}
+}
+
+func TestLoadDirectDownloadURLTTL(t *testing.T) {
+	tests := []struct {
+		value string
+		want  time.Duration
+	}{
+		{value: "1", want: time.Second},
+		{value: "120", want: 2 * time.Minute},
+		{value: strconv.Itoa(MaximumDirectDownloadURLTTLSeconds), want: time.Hour},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv("DIRECT_DOWNLOAD_URL_TTL_SECONDS", tt.value)
+
+			cfg, err := Load()
+
+			require.NoError(t, err)
+			require.Equal(t, tt.want, cfg.Cache.DirectDownloadURLTTL)
+		})
+	}
+}
+
+func TestLoadRejectsInvalidDirectDownloadURLTTL(t *testing.T) {
+	for _, value := range []string{"0", "3601", "-1", "abc", "1.5"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("DIRECT_DOWNLOAD_URL_TTL_SECONDS", value)
+
+			cfg, err := Load()
+
+			require.Zero(t, cfg)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "DIRECT_DOWNLOAD_URL_TTL_SECONDS")
 			require.Contains(t, err.Error(), value)
 		})
 	}

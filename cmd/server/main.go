@@ -67,7 +67,7 @@ func main() {
 		logger.Fatal().Err(err).Msg("storage initialization failed")
 	}
 	metricsRegistry := metrics.New(dbClient)
-	lifecycleService := storagelifecycle.New(dbClient)
+	lifecycleService := storagelifecycle.NewWithOptions(dbClient, storagelifecycle.Options{DirectDownloadURLTTL: cfg.Cache.DirectDownloadURLTTL})
 	capacityService := storagecapacity.NewService(storagecapacity.Options{
 		DB:        dbClient,
 		Storage:   storageAdapter,

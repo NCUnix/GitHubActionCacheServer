@@ -143,17 +143,17 @@ func TestDirectReaderLeaseProtectsFullSignedURLTTL(t *testing.T) {
 
 	lease, err := service.AcquireReader(ctx, "entry", AcquireReaderOptions{Direct: true})
 	require.NoError(t, err)
-	require.Equal(t, now.Add(DirectDownloadLeaseDuration), lease.ExpiresAt)
+	require.Equal(t, now.Add(DirectDownloadURLTTL+DirectDownloadLeaseMargin), lease.ExpiresAt)
 	require.Equal(t, storagereaderlease.ScopeParts, lease.Scope)
 	now = now.Add(30 * time.Second)
 	require.NoError(t, service.ExtendDirectReader(ctx, lease.ID))
 	persisted := client.StorageReaderLease.GetX(ctx, lease.ID)
-	require.Equal(t, now.Add(DirectDownloadLeaseDuration).UnixMilli(), persisted.ExpiresAt)
+	require.Equal(t, now.Add(DirectDownloadURLTTL+DirectDownloadLeaseMargin).UnixMilli(), persisted.ExpiresAt)
 	result, err := service.RequestLocationDeletion(ctx, location.ID, true, false)
 	require.NoError(t, err)
 	require.False(t, result.Finalized)
 
-	now = now.Add(DirectDownloadLeaseDuration - time.Second)
+	now = now.Add(DirectDownloadURLTTL + DirectDownloadLeaseMargin - time.Second)
 	result, err = service.RequestLocationDeletion(ctx, location.ID, false, true)
 	require.NoError(t, err)
 	require.False(t, result.Finalized)
@@ -162,6 +162,24 @@ func TestDirectReaderLeaseProtectsFullSignedURLTTL(t *testing.T) {
 	result, err = service.RequestLocationDeletion(ctx, location.ID, false, true)
 	require.NoError(t, err)
 	require.True(t, result.Finalized)
+}
+
+func TestDirectReaderLeaseOutlivesConfiguredURLTTL(t *testing.T) {
+	ctx, client, _ := testutil.NewSQLiteFilesystem(t)
+	now := time.Now().Truncate(time.Millisecond)
+	service := NewWithOptions(client, Options{Now: func() time.Time { return now }, DirectDownloadURLTTL: time.Minute})
+	createLifecycleEntry(ctx, client, "entry", "location", 1)
+
+	require.Equal(t, time.Minute, service.DirectDownloadURLTTL())
+	require.Equal(t, DirectDownloadURLTTL, New(client).DirectDownloadURLTTL())
+
+	lease, err := service.AcquireReader(ctx, "entry", AcquireReaderOptions{Direct: true})
+	require.NoError(t, err)
+	require.Equal(t, now.Add(time.Minute+10*time.Minute), lease.ExpiresAt)
+	now = now.Add(30 * time.Second)
+	require.NoError(t, service.ExtendDirectReader(ctx, lease.ID))
+	persisted := client.StorageReaderLease.GetX(ctx, lease.ID)
+	require.Equal(t, now.Add(time.Minute+10*time.Minute).UnixMilli(), persisted.ExpiresAt)
 }
 
 func TestReleaseReadersDeletesBatchAndIgnoresMissingLeases(t *testing.T) {

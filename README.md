@@ -161,12 +161,13 @@ composition; verify lifecycle support when using an S3-compatible endpoint.
 | Variable                             | Default              | Description                                                                                                               |
 |--------------------------------------|----------------------|---------------------------------------------------------------------------------------------------------------------------|
 | `ENABLE_DIRECT_DOWNLOADS`            | `false`              | When using S3, presigns eligible cache objects instead of proxying their downloads through the server.                    |
+| `DIRECT_DOWNLOAD_URL_TTL_SECONDS`    | `600`                | S3 direct URL lifetime, `1` to `3600` seconds. Shorter limits leaked-URL replay; delayed clients like BuildKit need more. |
 | `DOWNLOAD_URL_SIGNING_SECRET`        | generated at startup | HMAC secret for local signed upload and download URLs. Set a stable value for multi-instance or restart-safe deployments. |
 | `CACHE_MERGE_CONCURRENCY`            | CPU count            | Maximum number of concurrent S3 materializations. Values below `1` fall back to CPU count.                                |
 | `CACHE_MAX_SIZE_BYTES`               | unset                | Maximum logical cache payload bytes for any backend. Must be a positive integer when set.                                 |
 | `CACHE_FILESYSTEM_MAX_USAGE_PERCENT` | `90`                 | Filesystem volume usage that triggers eviction when no explicit byte budget is set. Range `(0, 100]`.                     |
 
-Local signed upload URLs expire after 24 hours; signed download URLs and S3 direct download URLs expire after 10 minutes.
+Local signed upload URLs expire after 24 hours and local signed download URLs after 10 minutes; S3 direct download URLs expire after `DIRECT_DOWNLOAD_URL_TTL_SECONDS`.
 
 Keep `ENABLE_DIRECT_DOWNLOADS=false` for Azure v2-compatible clients that may
 resume at a nonzero offset. Those clients send `x-ms-range`, which S3 does not
@@ -190,9 +191,10 @@ same volume. S3 is unlimited unless an explicit byte budget is configured.
 
 Active downloads are protected by database reader leases. Deletion detaches the
 cache entry first and physically removes storage only after readers drain and a
-10-minute grace period ends. Before returning a download URL, the server stats
-the anchor object; a confirmed-missing object detaches the entry and retries
-matching.
+10-minute grace period ends. A direct download's reader lease lasts 10 minutes
+longer than its URL, because S3 checks the signature only when a GET starts.
+Before returning a download URL, the server stats the anchor object; a
+confirmed-missing object detaches the entry and retries matching.
 
 ### Cleanup
 

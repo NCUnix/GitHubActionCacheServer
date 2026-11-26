@@ -16,10 +16,13 @@ import (
 )
 
 const (
-	ReaderLeaseDuration           = 2 * time.Minute
-	LeaseRenewalInterval          = 30 * time.Second
-	DirectDownloadLeaseDuration   = 10 * time.Minute
-	DeletionGracePeriod           = DirectDownloadLeaseDuration
+	ReaderLeaseDuration  = 2 * time.Minute
+	LeaseRenewalInterval = 30 * time.Second
+	DirectDownloadURLTTL = 10 * time.Minute
+	// S3 authenticates a GET only when it starts, so a download begun just before the URL expires keeps reading after it.
+	DirectDownloadLeaseMargin = 10 * time.Minute
+	// Covers direct URLs signed before reader leases existed: they carry no lease and stay valid for 10 minutes.
+	DeletionGracePeriod           = 10 * time.Minute
 	MaterializationLeaseDuration  = 2 * time.Minute
 	readerAcquireRetryBackoff     = 2 * time.Millisecond
 	legacyMaterializationLifetime = 15 * time.Minute
@@ -38,7 +41,7 @@ type Service struct {
 	now                          func() time.Time
 	readerLeaseDuration          time.Duration
 	leaseRenewalInterval         time.Duration
-	directDownloadLeaseDuration  time.Duration
+	directDownloadURLTTL         time.Duration
 	deletionGracePeriod          time.Duration
 	materializationLeaseDuration time.Duration
 	materializationDisabled      bool
@@ -49,7 +52,7 @@ type Options struct {
 	Now                          func() time.Time
 	ReaderLeaseDuration          time.Duration
 	LeaseRenewalInterval         time.Duration
-	DirectDownloadLeaseDuration  time.Duration
+	DirectDownloadURLTTL         time.Duration
 	DeletionGracePeriod          time.Duration
 	MaterializationLeaseDuration time.Duration
 	// MaterializationDisabled marks deployments without a storage composer, where
@@ -124,12 +127,20 @@ func NewWithOptions(db *ent.Client, options Options) *Service {
 		now:                          now,
 		readerLeaseDuration:          durationOrDefault(options.ReaderLeaseDuration, ReaderLeaseDuration),
 		leaseRenewalInterval:         durationOrDefault(options.LeaseRenewalInterval, LeaseRenewalInterval),
-		directDownloadLeaseDuration:  durationOrDefault(options.DirectDownloadLeaseDuration, DirectDownloadLeaseDuration),
+		directDownloadURLTTL:         durationOrDefault(options.DirectDownloadURLTTL, DirectDownloadURLTTL),
 		deletionGracePeriod:          durationOrDefault(options.DeletionGracePeriod, DeletionGracePeriod),
 		materializationLeaseDuration: durationOrDefault(options.MaterializationLeaseDuration, MaterializationLeaseDuration),
 		materializationDisabled:      options.MaterializationDisabled,
 		readerAcquireRetryBackoff:    durationOrDefault(options.ReaderAcquireRetryBackoff, readerAcquireRetryBackoff),
 	}
+}
+
+func (s *Service) DirectDownloadURLTTL() time.Duration {
+	return s.directDownloadURLTTL
+}
+
+func (s *Service) directDownloadLeaseDuration() time.Duration {
+	return s.directDownloadURLTTL + DirectDownloadLeaseMargin
 }
 
 func (s *Service) AcquireReader(ctx context.Context, cacheEntryID string, options AcquireReaderOptions) (*ReaderLease, error) {
@@ -263,7 +274,7 @@ func (s *Service) acquireReaderOnce(ctx context.Context, cacheEntryID string, op
 
 	duration := s.readerLeaseDuration
 	if options.Direct {
-		duration = s.directDownloadLeaseDuration
+		duration = s.directDownloadLeaseDuration()
 	}
 	expiresAt := s.now().Add(duration)
 	id := uuid.NewString()
@@ -338,7 +349,7 @@ func (s *Service) ExtendDirectReader(ctx context.Context, leaseID string) error 
 			storagereaderlease.ID(leaseID),
 			storagereaderlease.ExpiresAtGT(now.UnixMilli()),
 		).
-		SetExpiresAt(now.Add(s.directDownloadLeaseDuration).UnixMilli()).
+		SetExpiresAt(now.Add(s.directDownloadLeaseDuration()).UnixMilli()).
 		Save(ctx)
 	if err != nil {
 		return fmt.Errorf("extend direct-download reader lease: %w", err)
