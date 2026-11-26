@@ -44,7 +44,9 @@ curl http://localhost:3000/health
 ```
 
 For local protocol tests only, `SKIP_TOKEN_VALIDATION=true` can be used to accept
-unsigned or test JWTs. Do not use it for production.
+unsigned or test JWTs. Do not use it for production. Combined with
+`ENABLE_DIRECT_DOWNLOADS=true`, it fails startup unless the unsafe override in
+[Authentication](#authentication) is set.
 
 ## Docker
 
@@ -86,14 +88,15 @@ docker build -t mmx233/action-cache-server .
 
 ### Authentication
 
-| Variable                        | Default                                       | Description                                                                                                                                               |
-|---------------------------------|-----------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `ACTIONS_TOKEN_ISSUER`          | `https://token.actions.githubusercontent.com` | Expected JWT issuer. Set this to the GHES Actions token issuer for GHES deployments.                                                                      |
-| `GITHUB_ACTIONS_TOKEN_ISSUER`   | empty                                         | Legacy alias for `ACTIONS_TOKEN_ISSUER`; ignored when the canonical variable is set.                                                                      |
-| `ACTIONS_TOKEN_JWKS_URL`        | discovered from the issuer                    | Explicit JWKS URL override; skips OIDC discovery.                                                                                                         |
-| `GITHUB_ACTIONS_TOKEN_JWKS_URL` | empty                                         | Legacy alias for `ACTIONS_TOKEN_JWKS_URL`; ignored when the canonical variable is set.                                                                    |
-| `ACTIONS_TOKEN_AUDIENCE`        | empty                                         | Comma-separated list of accepted `aud` values. When set, the token must carry one of them; unset skips the check. A value with only commas fails startup. |
-| `SKIP_TOKEN_VALIDATION`         | `false`                                       | Parses JWTs without signature verification. Intended for tests only.                                                                                      |
+| Variable                                                 | Default                                       | Description                                                                                                                                                                                 |
+|----------------------------------------------------------|-----------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ACTIONS_TOKEN_ISSUER`                                   | `https://token.actions.githubusercontent.com` | Expected JWT issuer. Set this to the GHES Actions token issuer for GHES deployments.                                                                                                        |
+| `GITHUB_ACTIONS_TOKEN_ISSUER`                            | empty                                         | Legacy alias for `ACTIONS_TOKEN_ISSUER`; ignored when the canonical variable is set.                                                                                                        |
+| `ACTIONS_TOKEN_JWKS_URL`                                 | discovered from the issuer                    | Explicit JWKS URL override; skips OIDC discovery.                                                                                                                                           |
+| `GITHUB_ACTIONS_TOKEN_JWKS_URL`                          | empty                                         | Legacy alias for `ACTIONS_TOKEN_JWKS_URL`; ignored when the canonical variable is set.                                                                                                      |
+| `ACTIONS_TOKEN_AUDIENCE`                                 | empty                                         | Comma-separated list of accepted `aud` values. When set, the token must carry one of them; unset skips the check. A value with only commas fails startup.                                   |
+| `SKIP_TOKEN_VALIDATION`                                  | `false`                                       | Parses JWTs without signature verification. Intended for tests only. Cannot be enabled with `ENABLE_DIRECT_DOWNLOADS` unless `UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION=true`. |
+| `UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION` | `false`                                       | Allows `SKIP_TOKEN_VALIDATION` with `ENABLE_DIRECT_DOWNLOADS`. Anyone who can reach the server can then get signed storage URLs for any repository's cache. Local testing only.             |
 
 Unless explicitly overridden, the JWKS URL is read once at startup from the
 `jwks_uri` field of `{effective issuer}/.well-known/openid-configuration`. If
@@ -182,7 +185,8 @@ the unsafe `x-ms-range` plus `If-Range` combination, fail closed with `400`.
 
 Eligible caches are presigned directly; layouts that do not satisfy the
 backend's multipart constraints transparently fall back to server-proxied
-downloads.
+downloads. `ENABLE_DIRECT_DOWNLOADS=true` requires token validation; see
+`SKIP_TOKEN_VALIDATION` in [Authentication](#authentication).
 
 Capacity eviction runs after startup, every 10 minutes, and after finalize. It
 removes least-recently-used entries to 90% of the active budget. Filesystem

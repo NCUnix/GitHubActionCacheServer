@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -180,6 +181,18 @@ func Load() (Config, error) {
 		"ACTIONS_TOKEN_JWKS_URL",
 		tools.EnvOrDefault("GITHUB_ACTIONS_TOKEN_JWKS_URL", ""),
 	)
+	skipTokenValidation := tools.ParseBool(tools.EnvOrDefault("SKIP_TOKEN_VALIDATION", "false"))
+	enableDirectDownloads := tools.ParseBool(tools.EnvOrDefault("ENABLE_DIRECT_DOWNLOADS", "false"))
+	allowDirectDownloadsWithoutTokenValidation := tools.ParseBool(
+		tools.EnvOrDefault("UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION", "false"),
+	)
+	if enableDirectDownloads && skipTokenValidation && !allowDirectDownloadsWithoutTokenValidation {
+		return Config{}, errors.New(
+			"ENABLE_DIRECT_DOWNLOADS=true requires token validation, but SKIP_TOKEN_VALIDATION=true " +
+				"would hand signed storage URLs to unverified callers; unset SKIP_TOKEN_VALIDATION, " +
+				"or set UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION=true for local testing only",
+		)
+	}
 
 	return Config{
 		Server: ServerConfig{
@@ -192,7 +205,7 @@ func Load() (Config, error) {
 			TokenIssuer:         tokenIssuer,
 			TokenJWKSURL:        tokenJWKSURL,
 			TokenAudience:       tokenAudience,
-			SkipTokenValidation: tools.ParseBool(tools.EnvOrDefault("SKIP_TOKEN_VALIDATION", "false")),
+			SkipTokenValidation: skipTokenValidation,
 		},
 		DB: DBConfig{
 			Driver: tools.EnvOrDefault("DB_DRIVER", "sqlite"),
@@ -229,7 +242,7 @@ func Load() (Config, error) {
 			S3MultipartAbortTimeout:         positiveDurationEnv("STORAGE_S3_MULTIPART_ABORT_TIMEOUT", DefaultS3MultipartAbortTimeout),
 		},
 		Cache: CacheConfig{
-			EnableDirectDownloads:     tools.ParseBool(tools.EnvOrDefault("ENABLE_DIRECT_DOWNLOADS", "false")),
+			EnableDirectDownloads:     enableDirectDownloads,
 			DirectDownloadURLTTL:      directDownloadURLTTL,
 			DownloadURLSigningSecret:  tools.EnvOrDefault("DOWNLOAD_URL_SIGNING_SECRET", ""),
 			MergeConcurrency:          positiveIntEnv("CACHE_MERGE_CONCURRENCY", defaultMergeConcurrency()),

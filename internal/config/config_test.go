@@ -20,6 +20,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("GITHUB_ACTIONS_TOKEN_JWKS_URL", "")
 	t.Setenv("ACTIONS_TOKEN_AUDIENCE", "")
 	t.Setenv("SKIP_TOKEN_VALIDATION", "")
+	t.Setenv("UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION", "")
 	t.Setenv("DB_DRIVER", "")
 	t.Setenv("DB_SQLITE_PATH", "")
 	t.Setenv("DB_POSTGRES_URL", "")
@@ -96,6 +97,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("ACTIONS_TOKEN_JWKS_URL", "https://keys.example/jwks")
 	t.Setenv("GITHUB_ACTIONS_TOKEN_JWKS_URL", "https://legacy-keys.example/jwks")
 	t.Setenv("SKIP_TOKEN_VALIDATION", "true")
+	t.Setenv("UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION", "true")
 	t.Setenv("DB_DRIVER", "postgres")
 	t.Setenv("DB_POSTGRES_URL", "postgres://example")
 	t.Setenv("DB_POSTGRES_SSLMODE", "VERIFY-FULL")
@@ -458,6 +460,44 @@ func TestLoadRejectsInvalidDirectDownloadURLTTL(t *testing.T) {
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "DIRECT_DOWNLOAD_URL_TTL_SECONDS")
 			require.Contains(t, err.Error(), value)
+		})
+	}
+}
+
+func TestLoadDirectDownloadsWithSkippedTokenValidation(t *testing.T) {
+	tests := []struct {
+		name                  string
+		enableDirectDownloads bool
+		skipTokenValidation   bool
+		allowUnsafe           bool
+		wantErr               bool
+	}{
+		{name: "both enabled without override", enableDirectDownloads: true, skipTokenValidation: true, wantErr: true},
+		{name: "both enabled with override", enableDirectDownloads: true, skipTokenValidation: true, allowUnsafe: true},
+		{name: "only direct downloads", enableDirectDownloads: true},
+		{name: "only skipped token validation", skipTokenValidation: true},
+		{name: "override alone", allowUnsafe: true},
+		{name: "override with only direct downloads", enableDirectDownloads: true, allowUnsafe: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ENABLE_DIRECT_DOWNLOADS", strconv.FormatBool(tt.enableDirectDownloads))
+			t.Setenv("SKIP_TOKEN_VALIDATION", strconv.FormatBool(tt.skipTokenValidation))
+			t.Setenv("UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION", strconv.FormatBool(tt.allowUnsafe))
+
+			cfg, err := Load()
+
+			if tt.wantErr {
+				require.Zero(t, cfg)
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "ENABLE_DIRECT_DOWNLOADS")
+				require.Contains(t, err.Error(), "SKIP_TOKEN_VALIDATION")
+				require.Contains(t, err.Error(), "UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.enableDirectDownloads, cfg.Cache.EnableDirectDownloads)
+			require.Equal(t, tt.skipTokenValidation, cfg.Auth.SkipTokenValidation)
 		})
 	}
 }
