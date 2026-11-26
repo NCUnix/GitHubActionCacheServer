@@ -94,7 +94,7 @@ func main() {
 		Logger:         &logger,
 	})
 	if err != nil {
-		logger.Fatal().Err(err).Str("jwks_url", cfg.Auth.TokenJWKSURL).Msg("token verifier initialization failed")
+		logger.Fatal().Err(err).Msg("token verifier initialization failed")
 	}
 	if cfg.Auth.SkipTokenValidation {
 		logger.Warn().Str("environment_variable", "SKIP_TOKEN_VALIDATION").Msg("token validation is disabled; do not use in production")

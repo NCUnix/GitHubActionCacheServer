@@ -155,7 +155,10 @@ func Load() (Config, error) {
 		),
 		"/",
 	)
-	tokenJWKSURL := tools.EnvOrDefault("GITHUB_ACTIONS_TOKEN_JWKS_URL", tokenIssuer+"/.well-known/jwks")
+	tokenJWKSURL := tools.EnvOrDefault(
+		"ACTIONS_TOKEN_JWKS_URL",
+		tools.EnvOrDefault("GITHUB_ACTIONS_TOKEN_JWKS_URL", ""),
+	)
 
 	return Config{
 		Server: ServerConfig{

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -32,6 +34,7 @@ const (
 	jwksRefreshInterval       = 15 * time.Minute
 	jwksRefreshUnknownKIDRate = 5 * time.Minute
 	tokenClockSkewLeeway      = 30 * time.Second
+	discoveryMaxBytes         = 1 << 20
 )
 
 type Scope struct {
@@ -78,8 +81,18 @@ func NewVerifier(ctx context.Context, options Options) (*Verifier, error) {
 		logger = &nop
 	}
 
+	jwksURL := options.JWKSURL
+	if jwksURL == "" {
+		var err error
+		jwksURL, err = discoverJWKSURL(ctx, options.Issuer)
+		if err != nil {
+			jwksURL = options.Issuer + "/.well-known/jwks"
+			logger.Warn().Err(err).Str("fallback_url", jwksURL).Msg("OIDC discovery failed; falling back to the issuer JWKS URL, set ACTIONS_TOKEN_JWKS_URL if token validation keeps failing")
+		}
+	}
+
 	noErrorReturnFirstHTTPReq := false
-	jwks, err := keyfunc.NewDefaultOverrideCtx(ctx, []string{options.JWKSURL}, keyfunc.Override{
+	jwks, err := keyfunc.NewDefaultOverrideCtx(ctx, []string{jwksURL}, keyfunc.Override{
 		HTTPTimeout:               jwksHTTPTimeout,
 		RateLimitWaitMax:          jwksRateLimitWaitMax,
 		RefreshInterval:           jwksRefreshInterval,
@@ -92,10 +105,39 @@ func NewVerifier(ctx context.Context, options Options) (*Verifier, error) {
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("jwks initialization from %q failed: %w", options.JWKSURL, err)
+		return nil, fmt.Errorf("jwks initialization from %q failed: %w", jwksURL, err)
 	}
 	verifier.jwks = jwks
 	return verifier, nil
+}
+
+// discoverJWKSURL reads jwks_uri from the issuer's OIDC discovery document,
+// because GHEC custom issuers ({host}/{enterpriseSlug}) serve JWKS elsewhere.
+func discoverJWKSURL(ctx context.Context, issuer string) (string, error) {
+	discoveryURL := issuer + "/.well-known/openid-configuration"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("build OIDC discovery request: %w", err)
+	}
+	response, err := (&http.Client{Timeout: jwksHTTPTimeout}).Do(request)
+	if err != nil {
+		return "", fmt.Errorf("fetch OIDC discovery document: %w", err)
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return "", fmt.Errorf("OIDC discovery document %q returned status %s", discoveryURL, response.Status)
+	}
+	var document struct {
+		JWKSURI string `json:"jwks_uri"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, discoveryMaxBytes)).Decode(&document); err != nil {
+		return "", fmt.Errorf("decode OIDC discovery document %q: %w", discoveryURL, err)
+	}
+	if document.JWKSURI == "" {
+		return "", fmt.Errorf("OIDC discovery document %q has no jwks_uri", discoveryURL)
+	}
+	return document.JWKSURI, nil
 }
 
 func (v *Verifier) CacheScope(ctx context.Context, authorization string) (CacheScope, error) {

@@ -89,12 +89,15 @@ docker build -t mmx233/action-cache-server .
 |---------------------------------|-----------------------------------------------|----------------------------------------------------------------------------------------|
 | `ACTIONS_TOKEN_ISSUER`          | `https://token.actions.githubusercontent.com` | Expected JWT issuer. Set this to the GHES Actions token issuer for GHES deployments.   |
 | `GITHUB_ACTIONS_TOKEN_ISSUER`   | empty                                         | Legacy alias for `ACTIONS_TOKEN_ISSUER`; ignored when the canonical variable is set.   |
-| `GITHUB_ACTIONS_TOKEN_JWKS_URL` | derived from the effective issuer             | Explicit JWKS URL override for deployments whose keys use a nonstandard URL.           |
+| `ACTIONS_TOKEN_JWKS_URL`        | discovered from the issuer                    | Explicit JWKS URL override; skips OIDC discovery.                                      |
+| `GITHUB_ACTIONS_TOKEN_JWKS_URL` | empty                                         | Legacy alias for `ACTIONS_TOKEN_JWKS_URL`; ignored when the canonical variable is set. |
 | `SKIP_TOKEN_VALIDATION`         | `false`                                       | Parses JWTs without signature verification. Intended for tests only.                   |
 
-Unless explicitly overridden, the JWKS URL is
+Unless explicitly overridden, the JWKS URL is read once at startup from the
+`jwks_uri` field of `{effective issuer}/.well-known/openid-configuration`. If
+discovery fails, the server logs a warning and falls back to
 `{effective issuer}/.well-known/jwks`. Trailing slashes are removed from the
-effective issuer before JWT validation and JWKS derivation.
+effective issuer before JWT validation and JWKS discovery.
 
 The token must contain `repository_id`, an `ac` claim with cache scopes, and a
 valid `exp` claim. A scope with permission `>= 2` is required for saves; scopes

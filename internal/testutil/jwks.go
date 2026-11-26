@@ -16,9 +16,10 @@ import (
 
 // JWKS is a local JWKS endpoint backed by a single RSA key.
 type JWKS struct {
-	Server *httptest.Server
-	Key    *rsa.PrivateKey
-	KID    string
+	Server  *httptest.Server
+	Handler http.Handler
+	Key     *rsa.PrivateKey
+	KID     string
 }
 
 func NewJWKS(t testing.TB) *JWKS {
@@ -34,10 +35,11 @@ func NewJWKS(t testing.TB) *JWKS {
 		base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes()),
 		base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.PublicKey.E)).Bytes()),
 	)
-	j.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	j.Handler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(body))
-	}))
+	})
+	j.Server = httptest.NewServer(j.Handler)
 	t.Cleanup(j.Server.Close)
 
 	return j
