@@ -91,21 +91,19 @@ jobs:
       - name: Build Docker image
         run: docker build -t github-actions-cache-server:test .
 
-      - name: Start MinIO
+      - name: Start RustFS
         run: |
-          docker run -d --name minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio:latest server /data
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:9000/minio/health/ready; then
-              exit 0
-            fi
-            sleep 2
-          done
-          docker logs minio
-          exit 1
+          docker run -d --name rustfs \
+            -p 127.0.0.1:9000:9000 \
+            -e RUSTFS_ACCESS_KEY=rustfsadmin \
+            -e RUSTFS_SECRET_KEY=rustfsadmin \
+            rustfs/rustfs:1.0.0-glibc
+          if ! curl --fail --silent --show-error --retry 60 --retry-delay 1 --retry-all-errors \
+            --aws-sigv4 aws:amz:us-east-1:s3 --user rustfsadmin:rustfsadmin \
+            --request PUT http://127.0.0.1:9000/cache-test; then
+            docker logs rustfs
+            exit 1
+          fi
 
       - name: External service integration tests
         env:
@@ -118,8 +116,7 @@ jobs:
           E2E_MYSQL_PASSWORD: cache
           E2E_S3_ENDPOINT_URL: http://127.0.0.1:9000
           E2E_S3_BUCKET: cache-test
-          E2E_S3_CREATE_BUCKET: "true"
-          AWS_ACCESS_KEY_ID: minioadmin
-          AWS_SECRET_ACCESS_KEY: minioadmin
+          AWS_ACCESS_KEY_ID: rustfsadmin
+          AWS_SECRET_ACCESS_KEY: rustfsadmin
           AWS_EC2_METADATA_DISABLED: "true"
-        run: go test ./e2e -run 'TestExternal((Postgres|MySQL)(FilesystemSaveAndRestore|CacheKeyMatching|CleanupRetention|StorageSizeMigration|CapacityEviction|SchemaMigrationSerialization)|PgBouncerSchemaMigrationSerialization|S3MinIOSaveAndRestore)' -count=1
+        run: go test ./e2e -run 'TestExternal((Postgres|MySQL)(FilesystemSaveAndRestore|CacheKeyMatching|CleanupRetention|StorageSizeMigration|CapacityEviction|SchemaMigrationSerialization)|PgBouncerSchemaMigrationSerialization|S3SaveAndRestore)' -count=1

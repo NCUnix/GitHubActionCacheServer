@@ -252,10 +252,10 @@ func TestExternalMySQLCleanupRetention(t *testing.T) {
 	runExternalCleanupRetention(t, dbCfg)
 }
 
-func TestExternalS3MinIOSaveAndRestore(t *testing.T) {
+func TestExternalS3SaveAndRestore(t *testing.T) {
 	storageCfg, ok := externalS3Config()
 	if !ok {
-		t.Skip("set E2E_S3_ENDPOINT_URL and E2E_S3_BUCKET to run S3/MinIO integration coverage")
+		t.Skip("set E2E_S3_ENDPOINT_URL and E2E_S3_BUCKET to run S3 integration coverage")
 	}
 	if os.Getenv("AWS_EC2_METADATA_DISABLED") == "" {
 		t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
@@ -271,7 +271,7 @@ func TestExternalS3MinIOSaveAndRestore(t *testing.T) {
 	})
 
 	router := newExternalRouter(t, client, s3Storage)
-	runSaveRestoreFlow(t, router, uniqueIntegrationCacheKey("s3-minio"), strings.Repeat("s", externalS3CacheSize))
+	runSaveRestoreFlow(t, router, uniqueIntegrationCacheKey("s3"), strings.Repeat("s", externalS3CacheSize))
 }
 
 func runSaveRestoreFlow(t *testing.T, router http.Handler, key string, content string) {

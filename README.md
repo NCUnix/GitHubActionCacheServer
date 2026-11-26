@@ -265,7 +265,7 @@ E2E_MYSQL_DATABASE=cache_test \
 E2E_MYSQL_USER=cache \
 E2E_S3_ENDPOINT_URL=http://127.0.0.1:9000 \
 E2E_S3_BUCKET=cache-test \
-go test ./e2e -run 'TestExternal(Postgres|MySQL|S3MinIO)SaveAndRestore' -count=1
+go test ./e2e -run 'TestExternal((Postgres|MySQL)Filesystem|S3)SaveAndRestore' -count=1
 ```
 
 Targeted data-path benchmarks cover filesystem whole-cache upload/download,
