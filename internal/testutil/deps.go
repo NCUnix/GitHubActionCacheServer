@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
@@ -41,4 +42,27 @@ func NewSQLiteFilesystem(t testing.TB) (context.Context, *ent.Client, *storage.F
 
 	ctx, client := NewSQLiteClient(t)
 	return ctx, client, NewFilesystemAdapter(t)
+}
+
+// cacheService is the shutdown surface of *cache.Service; testutil cannot import cache because cache tests import testutil.
+type cacheService interface {
+	StopAcceptingMerges()
+	WaitForMerges(context.Context) error
+	ShutdownReaderLeaseReleaser(context.Context) error
+}
+
+// ShutdownCacheServiceOnCleanup stops the service's background writers before the database and temp dirs are torn down.
+func ShutdownCacheServiceOnCleanup(tb testing.TB, service cacheService) {
+	tb.Helper()
+
+	tb.Cleanup(func() {
+		service.StopAcceptingMerges()
+		canceled, cancel := context.WithCancel(context.Background())
+		cancel()
+		// Cancel in-flight merges and wait for them to exit; the error only echoes the canceled context.
+		_ = service.WaitForMerges(canceled)
+		ctx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelShutdown()
+		require.NoError(tb, service.ShutdownReaderLeaseReleaser(ctx))
+	})
 }

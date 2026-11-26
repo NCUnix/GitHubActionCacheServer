@@ -20,7 +20,7 @@ import (
 func TestCreateUploadTakesOverInactiveReservation(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	now := time.Unix(1_800_000_000, 0)
-	service := NewService(Options{
+	service := newTestService(t, Options{
 		DB:      client,
 		Storage: filesystem,
 		Now:     func() time.Time { return now },
@@ -44,7 +44,7 @@ func TestCreateUploadTakesOverInactiveReservation(t *testing.T) {
 func TestCreateUploadKeepsActiveReservation(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	now := time.Unix(1_800_000_000, 0)
-	service := NewService(Options{
+	service := newTestService(t, Options{
 		DB:      client,
 		Storage: filesystem,
 		Now:     func() time.Time { return now },
@@ -64,7 +64,7 @@ func TestCreateUploadKeepsActiveReservation(t *testing.T) {
 func TestConcurrentUploadTakeoverCreatesOneReservation(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	now := time.Unix(1_800_000_000, 0)
-	service := NewService(Options{
+	service := newTestService(t, Options{
 		DB:      client,
 		Storage: filesystem,
 		Now:     func() time.Time { return now },
@@ -108,7 +108,7 @@ func TestConcurrentUploadTakeoverCreatesOneReservation(t *testing.T) {
 func TestCreateUploadHandlesDuplicateLegacyReservations(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	now := time.Unix(1_800_000_000, 0)
-	service := NewService(Options{
+	service := newTestService(t, Options{
 		DB:      client,
 		Storage: filesystem,
 		Now:     func() time.Time { return now },
@@ -156,7 +156,7 @@ func TestDeleteUploadIfInactiveDoesNotDeleteRefreshedUpload(t *testing.T) {
 func TestUploadActivityRenewalLossCancelsStorageIO(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := newContextBlockingUploadStorage(filesystem)
-	service := NewService(Options{
+	service := newTestService(t, Options{
 		DB:                      client,
 		Storage:                 adapter,
 		UploadHeartbeatInterval: 10 * time.Millisecond,
@@ -188,7 +188,7 @@ func TestUploadPartMapsMissingFinalUploadRow(t *testing.T) {
 			client.Upload.DeleteOneID(uploadID).ExecX(ctx)
 		},
 	}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	upload, err := service.CreateUpload(ctx, "key", "version", writableScope())
 	require.NoError(t, err)
 	uploadID = upload.UploadID
@@ -206,7 +206,7 @@ func TestBlockListCommitMapsMissingFinalUploadRow(t *testing.T) {
 			client.Upload.DeleteOneID(uploadID).ExecX(ctx)
 		},
 	}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	upload, err := service.CreateUpload(ctx, "key", "version", writableScope())
 	require.NoError(t, err)
 	uploadID = upload.UploadID
@@ -225,7 +225,7 @@ func TestCompleteUploadMapsMissingFinalUploadRow(t *testing.T) {
 			client.Upload.DeleteOneID(uploadID).ExecX(ctx)
 		},
 	}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
 	require.NoError(t, err)
@@ -242,7 +242,7 @@ func TestDeleteUploadMapsMissingRow(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	var logs bytes.Buffer
 	logger := zerolog.New(&logs).Level(zerolog.DebugLevel)
-	service := NewService(Options{DB: client, Storage: filesystem, Logger: &logger})
+	service := newTestService(t, Options{DB: client, Storage: filesystem, Logger: &logger})
 	currentUpload := createTestUpload(t, ctx, client, time.Now())
 	client.Upload.DeleteOneID(currentUpload.ID).ExecX(ctx)
 

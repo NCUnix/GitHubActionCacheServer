@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi"
@@ -48,7 +49,7 @@ func TestCacheServiceReturnsUnavailableWhenKeyUnknown(t *testing.T) {
 	_, client, storageAdapter := testutil.NewSQLiteFilesystem(t)
 	cfg, err := config.Load()
 	require.NoError(t, err)
-	router := httpapi.NewRouter(zerolog.Nop(), cfg, httpapi.Dependencies{
+	router := newRouterWithCleanup(t, cfg, httpapi.Dependencies{
 		DB:        client,
 		Storage:   storageAdapter,
 		Lifecycle: storagelifecycle.New(client),
@@ -188,7 +189,7 @@ func newTestApp(t *testing.T) testApp {
 	cfg, err := config.Load()
 	require.NoError(t, err)
 	lifecycle := storagelifecycle.New(client)
-	router := httpapi.NewRouter(zerolog.Nop(), cfg, httpapi.Dependencies{
+	router := newRouterWithCleanup(t, cfg, httpapi.Dependencies{
 		DB:        client,
 		Storage:   storageAdapter,
 		Lifecycle: lifecycle,
@@ -201,4 +202,33 @@ func newTestApp(t *testing.T) testApp {
 		storage:   storageAdapter,
 		lifecycle: lifecycle,
 	}
+}
+
+func newTestCacheService(tb testing.TB, options cache.Options) *cache.Service {
+	tb.Helper()
+
+	service := cache.NewService(options)
+	testutil.ShutdownCacheServiceOnCleanup(tb, service)
+	return service
+}
+
+// newRouterWithCleanup expects an explicit deps.Cache to come from newTestCacheService.
+func newRouterWithCleanup(tb testing.TB, cfg config.Config, deps httpapi.Dependencies) http.Handler {
+	tb.Helper()
+
+	logger := zerolog.Nop()
+	if deps.Cache == nil {
+		if deps.Lifecycle == nil {
+			deps.Lifecycle = storagelifecycle.New(deps.DB)
+		}
+		deps.Cache = newTestCacheService(tb, cache.Options{
+			DB:                    deps.DB,
+			Storage:               deps.Storage,
+			EnableDirectDownloads: cfg.Cache.EnableDirectDownloads,
+			MergeConcurrency:      cfg.Cache.MergeConcurrency,
+			Lifecycle:             deps.Lifecycle,
+			Logger:                &logger,
+		})
+	}
+	return httpapi.NewRouter(logger, cfg, deps)
 }

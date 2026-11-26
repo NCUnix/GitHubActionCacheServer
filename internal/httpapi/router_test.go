@@ -19,6 +19,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/downloadurl"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/storagelifecycle"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/testutil"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
@@ -54,7 +55,7 @@ func TestBlockListRejectsMissingUploadBeforeReadingBody(t *testing.T) {
 	_, client, storageAdapter := testutil.NewSQLiteFilesystem(t)
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
@@ -81,7 +82,7 @@ func TestBlockListRejectsOversizedBody(t *testing.T) {
 	require.NoError(t, err)
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Cache:    cacheService,
@@ -133,7 +134,7 @@ func TestFallbackProxyForwardsUnknownPath(t *testing.T) {
 	_, client, storageAdapter := testutil.NewSQLiteFilesystem(t)
 	cfg := newTestConfig(t)
 	cfg.Server.DefaultActionsResultsURL = upstream.URL + "/api"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
@@ -203,7 +204,7 @@ func TestFallbackProxyDoesNotHandleManagementMisses(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Server.DefaultActionsResultsURL = upstream.URL
 	cfg.Management.APIKey = "secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
@@ -230,7 +231,7 @@ func TestManagementDocsAndSpec(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Management.APIKey = "secret"
 	cfg.Server.APIBaseURL = "https://cache.example"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
@@ -273,7 +274,7 @@ func TestManagementDocsIgnoresForwardedHeaders(t *testing.T) {
 	cfg := newTestConfig(t)
 	cfg.Management.APIKey = "secret"
 	cfg.Server.APIBaseURL = ""
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
@@ -307,7 +308,7 @@ func TestManagementCORSPreflightDoesNotRequireAPIKey(t *testing.T) {
 	_, client, storageAdapter := testutil.NewSQLiteFilesystem(t)
 	cfg := newTestConfig(t)
 	cfg.Management.APIKey = "secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
@@ -347,7 +348,7 @@ func TestDownloadDoesNotSurfaceBackgroundMaterializationFailure(t *testing.T) {
 
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  failComposeStorage{Adapter: filesystem},
 		Verifier: newSkipVerifier(t),
@@ -392,7 +393,7 @@ func TestDownloadWithoutSizeBytesStillPinsContentHeaders(t *testing.T) {
 
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  filesystem,
 		Verifier: newSkipVerifier(t),
@@ -435,7 +436,7 @@ func TestDownloadLengthMismatchDoesNotReusePayloadContentLengthForError(t *testi
 
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{
+	router := newRouterWithCleanup(t, cfg, Dependencies{
 		DB:       client,
 		Storage:  shortDownloadStorage{Adapter: filesystem},
 		Verifier: newSkipVerifier(t),
@@ -478,7 +479,7 @@ func TestDownloadSupportsXMRangeAcrossParts(t *testing.T) {
 
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{DB: client, Storage: filesystem, Verifier: newSkipVerifier(t)})
+	router := newRouterWithCleanup(t, cfg, Dependencies{DB: client, Storage: filesystem, Verifier: newSkipVerifier(t)})
 	signedURL, err := downloadurl.New("test-secret", time.Minute).Sign("http://cache.test/download/entry-id", "entry-id")
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodGet, signedURL, nil)
@@ -501,7 +502,7 @@ func TestDownloadRangeSelectsFirstSatisfiableAndRejectsInvalid(t *testing.T) {
 	client.CacheEntry.Create().SetID("entry-id").SetKey("key").SetVersion("version").SetScope("scope").SetRepoId("repo").SetUpdatedAt(time.Now().UnixMilli()).SetLocation(location).SaveX(ctx)
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{DB: client, Storage: filesystem, Verifier: newSkipVerifier(t)})
+	router := newRouterWithCleanup(t, cfg, Dependencies{DB: client, Storage: filesystem, Verifier: newSkipVerifier(t)})
 	signedURL, err := downloadurl.New("test-secret", time.Minute).Sign("http://cache.test/download/entry-id", "entry-id")
 	require.NoError(t, err)
 
@@ -560,7 +561,7 @@ func TestHeadDownloadReturnsMetadataWithoutOpeningStreamOrLease(t *testing.T) {
 	adapter := &downloadOpenTrackingStorage{Adapter: filesystem}
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{DB: client, Storage: adapter, Verifier: newSkipVerifier(t)})
+	router := newRouterWithCleanup(t, cfg, Dependencies{DB: client, Storage: adapter, Verifier: newSkipVerifier(t)})
 	signedURL, err := downloadurl.New("test-secret", time.Minute).Sign("http://cache.test/download/entry-id", "entry-id")
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodHead, signedURL, nil)
@@ -585,7 +586,7 @@ func TestRangedDownloadFailureAfterWriteDoesNotAppendJSON(t *testing.T) {
 	client.CacheEntry.Create().SetID("entry-id").SetKey("key").SetVersion("version").SetScope("scope").SetRepoId("repo").SetUpdatedAt(time.Now().UnixMilli()).SetLocation(location).SaveX(ctx)
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{DB: client, Storage: shortRangedDownloadStorage{Adapter: filesystem}, Verifier: newSkipVerifier(t)})
+	router := newRouterWithCleanup(t, cfg, Dependencies{DB: client, Storage: shortRangedDownloadStorage{Adapter: filesystem}, Verifier: newSkipVerifier(t)})
 	signedURL, err := downloadurl.New("test-secret", time.Minute).Sign("http://cache.test/download/entry-id", "entry-id")
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodGet, signedURL, nil)
@@ -606,7 +607,7 @@ func TestRangedDownloadFailureBeforeWriteReturnsCleanJSON(t *testing.T) {
 	client.CacheEntry.Create().SetID("entry-id").SetKey("key").SetVersion("version").SetScope("scope").SetRepoId("repo").SetUpdatedAt(time.Now().UnixMilli()).SetLocation(location).SaveX(ctx)
 	cfg := newTestConfig(t)
 	cfg.Cache.DownloadURLSigningSecret = "test-secret"
-	router := NewRouter(zerolog.Nop(), cfg, Dependencies{DB: client, Storage: failedRangedDownloadStorage{Adapter: filesystem}, Verifier: newSkipVerifier(t)})
+	router := newRouterWithCleanup(t, cfg, Dependencies{DB: client, Storage: failedRangedDownloadStorage{Adapter: filesystem}, Verifier: newSkipVerifier(t)})
 	signedURL, err := downloadurl.New("test-secret", time.Minute).Sign("http://cache.test/download/entry-id", "entry-id")
 	require.NoError(t, err)
 	req := httptest.NewRequest(http.MethodGet, signedURL, nil)
@@ -625,11 +626,32 @@ func newTestRouter(t *testing.T) http.Handler {
 	t.Helper()
 
 	_, client, storageAdapter := testutil.NewSQLiteFilesystem(t)
-	return NewRouter(zerolog.Nop(), newTestConfig(t), Dependencies{
+	return newRouterWithCleanup(t, newTestConfig(t), Dependencies{
 		DB:       client,
 		Storage:  storageAdapter,
 		Verifier: newSkipVerifier(t),
 	})
+}
+
+func newRouterWithCleanup(tb testing.TB, cfg config.Config, deps Dependencies) http.Handler {
+	tb.Helper()
+
+	logger := zerolog.Nop()
+	if deps.Cache == nil {
+		if deps.Lifecycle == nil {
+			deps.Lifecycle = storagelifecycle.New(deps.DB)
+		}
+		deps.Cache = cache.NewService(cache.Options{
+			DB:                    deps.DB,
+			Storage:               deps.Storage,
+			EnableDirectDownloads: cfg.Cache.EnableDirectDownloads,
+			MergeConcurrency:      cfg.Cache.MergeConcurrency,
+			Lifecycle:             deps.Lifecycle,
+			Logger:                &logger,
+		})
+	}
+	testutil.ShutdownCacheServiceOnCleanup(tb, deps.Cache)
+	return NewRouter(logger, cfg, deps)
 }
 
 func signedBlockListRequestURI(t *testing.T, secret string, uploadID int64) string {

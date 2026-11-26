@@ -273,7 +273,7 @@ func newFilesystemBenchmarkService(b *testing.B) (context.Context, *ent.Client, 
 	b.Helper()
 
 	ctx, client, filesystem := testutil.NewSQLiteFilesystem(b)
-	service := NewService(Options{DB: client, Storage: filesystem, MergeConcurrency: 1})
+	service := newTestService(b, Options{DB: client, Storage: filesystem, MergeConcurrency: 1})
 	b.Cleanup(func() {
 		service.StopAcceptingMerges()
 		waitCtx, cancel := context.WithTimeout(context.Background(), time.Second)

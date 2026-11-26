@@ -32,7 +32,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	"github.com/go-sql-driver/mysql"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -318,7 +317,7 @@ func runCacheKeyMatching(t *testing.T, client *ent.Client, router http.Handler) 
 	require.NoError(t, err)
 	require.Equal(t, 2, client.CacheEntry.Query().CountX(ctx))
 
-	service := cache.NewService(cache.Options{DB: client})
+	service := newTestCacheService(t, cache.Options{DB: client})
 	scope := auth.CacheScope{
 		RepoID: "123",
 		Scopes: []auth.Scope{{Scope: "refs/heads/main", Permission: 3}},
@@ -643,7 +642,7 @@ func newExternalRouter(t *testing.T, client *ent.Client, storageAdapter storage.
 	require.NoError(t, err)
 	cfg.Cache.DownloadURLSigningSecret = "integration-test-secret"
 	lifecycle := storagelifecycle.New(client)
-	cacheService := cache.NewService(cache.Options{
+	cacheService := newTestCacheService(t, cache.Options{
 		DB:               client,
 		Storage:          storageAdapter,
 		MergeConcurrency: cfg.Cache.MergeConcurrency,
@@ -656,7 +655,7 @@ func newExternalRouter(t *testing.T, client *ent.Client, storageAdapter storage.
 		require.NoError(t, cacheService.WaitForMerges(ctx))
 	})
 
-	return httpapi.NewRouter(zerolog.Nop(), cfg, httpapi.Dependencies{
+	return newRouterWithCleanup(t, cfg, httpapi.Dependencies{
 		DB:        client,
 		Storage:   storageAdapter,
 		Cache:     cacheService,

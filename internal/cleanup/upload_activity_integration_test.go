@@ -30,6 +30,7 @@ func TestActiveUploadSurvivesCleanupAfterLongLogicalTime(t *testing.T) {
 		Now:                     now,
 		UploadHeartbeatInterval: 10 * time.Millisecond,
 	})
+	testutil.ShutdownCacheServiceOnCleanup(t, uploads)
 	cleaner := cleanup.NewService(cleanup.Options{DB: client, Storage: filesystem, Now: now})
 	scope := auth.CacheScope{
 		RepoID: "repo",

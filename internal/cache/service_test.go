@@ -36,7 +36,7 @@ func TestReadScopesByPermissionFiltersUnreadableScopes(t *testing.T) {
 func TestUploadPartFailureDoesNotPoisonFinalize(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &failOnceStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -59,7 +59,7 @@ func TestUploadPartFailureDoesNotPoisonFinalize(t *testing.T) {
 func TestCommitBlockListCopiesBlocksInDeclaredOrderAndCanRetry(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &copyTrackingStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -87,7 +87,7 @@ func TestCommitBlockListCopiesBlocksInDeclaredOrderAndCanRetry(t *testing.T) {
 
 func TestCommitBlockListReportsMissingBlock(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 
 	upload, err := service.CreateUpload(ctx, "key", "version", writableScope())
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestCommitBlockListReportsMissingBlock(t *testing.T) {
 
 func TestBlockListCommitRejectsMoreThanProtocolLimit(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 
 	upload, err := service.CreateUpload(ctx, "key", "version", writableScope())
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestBlockListCommitRejectsMoreThanProtocolLimit(t *testing.T) {
 func TestCompleteUploadTrustsPersistedPartCount(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -131,7 +131,7 @@ func TestCompleteUploadTrustsPersistedPartCount(t *testing.T) {
 
 func TestCompleteUploadSeedsLocationRecency(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -149,7 +149,7 @@ func TestCompleteUploadSeedsLocationRecency(t *testing.T) {
 func TestCompleteUploadPersistsLogicalPartSizeOnly(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	capacity := &capacityTriggerCounter{}
-	service := NewService(Options{DB: client, Storage: filesystem, Capacity: capacity})
+	service := newTestService(t, Options{DB: client, Storage: filesystem, Capacity: capacity})
 	scope := writableScope()
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ func TestCompleteUploadPersistsLogicalPartSizeOnly(t *testing.T) {
 func TestCompleteUploadValidatesLegacyUploadWithoutPartCountMetadata(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	client.Upload.Create().
@@ -202,7 +202,7 @@ func TestCompleteUploadValidatesLegacyUploadWithoutPartCountMetadata(t *testing.
 func TestCompleteUploadKeepsLegacyUploadAfterTransientStorageError(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem, countErr: errInjectedStorageFailure}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	client.Upload.Create().
@@ -226,7 +226,7 @@ func TestCompleteUploadKeepsLegacyUploadAfterTransientStorageError(t *testing.T)
 func TestCompleteUploadKeepsUploadAfterTransientIndexedInspectionError(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem, inspectIndexedErr: errInjectedStorageFailure}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -241,7 +241,7 @@ func TestCompleteUploadKeepsUploadAfterTransientIndexedInspectionError(t *testin
 
 func TestCompleteUploadRejectsAndDeletesOverLimitRestoredSession(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 	const uploadID = int64(42)
 	client.Upload.Create().
@@ -264,7 +264,7 @@ func TestCompleteUploadRejectsAndDeletesOverLimitRestoredSession(t *testing.T) {
 
 func TestCompleteUploadRejectsBlocksWithoutCommittedBlockList(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -285,7 +285,7 @@ func TestCompleteUploadRejectsBlocksWithoutCommittedBlockList(t *testing.T) {
 func TestCompleteUploadQueuesDeletionWithoutStorageIO(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &failDeleteStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -309,7 +309,7 @@ func TestCompleteUploadQueuesDeletionWithoutStorageIO(t *testing.T) {
 func TestDownloadTrustsPartCountAndOpensEachPartOnlyWhenRead(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	service.StopAcceptingMerges()
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("hello ")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("world")))
@@ -331,7 +331,7 @@ func TestDownloadTrustsPartCountAndOpensEachPartOnlyWhenRead(t *testing.T) {
 
 func TestDownloadRangedCrossesPartBoundary(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("body")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("-tail")))
 	createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -350,7 +350,7 @@ func TestDownloadRangedCrossesPartBoundary(t *testing.T) {
 func TestDownloadRangedCachesPartIndexAcrossRequests(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("body")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("tail")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -367,7 +367,7 @@ func TestDownloadRangedCachesPartIndexAcrossRequests(t *testing.T) {
 func TestCompleteUploadSeedsPartIndexCache(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
 	require.NoError(t, err)
@@ -392,7 +392,7 @@ func TestCompleteUploadSeedsPartIndexCache(t *testing.T) {
 
 func TestDownloadRangedUsesMergedRepresentation(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/merged", bytes.NewBufferString("abcdef")))
 	location := createCacheEntryForDownload(ctx, client, "entry-id", "folder")
 	client.StorageLocation.UpdateOneID(location.ID).SetSizeBytes(6).SetMergedAt(time.Now().UnixMilli()).ExecX(ctx)
@@ -408,7 +408,7 @@ func TestDownloadRangedUsesMergedRepresentation(t *testing.T) {
 
 func TestDownloadMetadataUsesMergedRepresentationAfterPartsDeletion(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/merged", bytes.NewBufferString("data")))
 	location := createCacheEntryForDownload(ctx, client, "entry-id", "folder")
 	now := time.Now().UnixMilli()
@@ -424,7 +424,7 @@ func TestDownloadMetadataUsesMergedRepresentationAfterPartsDeletion(t *testing.T
 func TestDownloadRangedSinglePartSkipsIndexDiscovery(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("body")))
 	location := createCacheEntryForDownload(ctx, client, "entry-id", "folder")
 	client.StorageLocation.UpdateOneID(location.ID).SetSizeBytes(4).ExecX(ctx)
@@ -442,7 +442,7 @@ func TestDownloadRangedSinglePartSkipsIndexDiscovery(t *testing.T) {
 func TestDownloadRangedZeroPartIsUnsatisfiableWithoutIndexDiscovery(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 0)
 	client.StorageLocation.UpdateOneID(location.ID).SetSizeBytes(99).ExecX(ctx)
 
@@ -459,7 +459,7 @@ func TestDownloadRangedZeroPartIsUnsatisfiableWithoutIndexDiscovery(t *testing.T
 
 func TestDownloadRangedFailsClosedWhenRecordedSizeDisagrees(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("body")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("tail")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -482,7 +482,7 @@ func TestDownloadRangedRevalidatesLeaseAfterIndexDiscovery(t *testing.T) {
 			client.StorageReaderLease.Delete().ExecX(ctx)
 		},
 	}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 
 	_, err := service.DownloadRanged(ctx, "entry-id", []ByteRange{OpenEndedByteRange(1)})
 	require.ErrorIs(t, err, ErrCacheNotFound)
@@ -495,7 +495,7 @@ func TestDownloadRangedBoundsIndexDiscoveryTime(t *testing.T) {
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
 	client.StorageLocation.UpdateOneID(location.ID).SetSizeBytes(8).ExecX(ctx)
 	adapter := &blockingInspectIndexedSizesStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, PartIndexDiscoveryTimeout: 20 * time.Millisecond})
+	service := newTestService(t, Options{DB: client, Storage: adapter, PartIndexDiscoveryTimeout: 20 * time.Millisecond})
 
 	_, err := service.DownloadRanged(ctx, "entry-id", []ByteRange{OpenEndedByteRange(1)})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -504,7 +504,7 @@ func TestDownloadRangedBoundsIndexDiscoveryTime(t *testing.T) {
 
 func TestMatchCacheEntryUsesOriginalOrder(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 
 	createMatchedCacheEntry(ctx, client, "exact-primary", "linux-cache")
 	createMatchedCacheEntry(ctx, client, "prefixed-primary", "linux-cache-old")
@@ -540,7 +540,7 @@ func TestMatchCacheEntryUsesOriginalOrder(t *testing.T) {
 
 func TestMatchCacheEntryContinuesToNextScopeWithoutRestoreKeys(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 
 	expected := createMatchedCacheEntryInScope(ctx, client, "secondary-scope", "linux-cache", "refs/heads/base")
 	scope := auth.CacheScope{
@@ -559,7 +559,7 @@ func TestMatchCacheEntryContinuesToNextScopeWithoutRestoreKeys(t *testing.T) {
 
 func TestCreateUploadReservationIsAtomic(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 
 	const attempts = 20
@@ -612,7 +612,7 @@ func TestUploadTupleHashPreservesFieldBoundaries(t *testing.T) {
 func TestSinglePartUsesPartsObjectForDirectDownload(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	location := client.StorageLocation.GetX(ctx, entry.LocationId)
 	require.NoError(t, filesystem.UploadStream(ctx, partObjectName(location.FolderName, 0), bytes.NewBufferString("data")))
@@ -635,7 +635,7 @@ func TestSinglePartUsesPartsObjectForDirectDownload(t *testing.T) {
 func TestDirectDownloadSignsWithLifecycleURLTTL(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{
+	service := newTestService(t, Options{
 		DB:                    client,
 		Storage:               adapter,
 		EnableDirectDownloads: true,
@@ -659,7 +659,7 @@ func TestDirectDownloadSignsWithLifecycleURLTTL(t *testing.T) {
 func TestMultipartDirectLookupFallsBackWithoutReaderLeaseWrite(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	location := client.StorageLocation.UpdateOneID(entry.LocationId).
 		SetPartCount(2).
@@ -681,7 +681,7 @@ func TestMultipartDirectLookupFallsBackWithoutReaderLeaseWrite(t *testing.T) {
 func TestMultipartDirectLookupSkipsFencedLocationBeforeFallback(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	client.StorageLocation.UpdateOneID(entry.LocationId).
 		SetPartCount(2).
@@ -704,7 +704,7 @@ func TestMultipartDirectLookupSkipsFencedLocationBeforeFallback(t *testing.T) {
 func TestDirectDownloadThrottlesLastDownloadedAtUpdates(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	location := client.StorageLocation.GetX(ctx, entry.LocationId)
 	require.NoError(t, filesystem.UploadStream(ctx, partObjectName(location.FolderName, 0), bytes.NewBufferString("data")))
@@ -721,7 +721,7 @@ func TestDirectDownloadThrottlesLastDownloadedAtUpdates(t *testing.T) {
 
 func TestReplacementFencesOldLocationUntilLazyReaderCloses(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 	require.NoError(t, filesystem.UploadStream(ctx, "old/parts/0", bytes.NewBufferString("hello ")))
 	require.NoError(t, filesystem.UploadStream(ctx, "old/parts/1", bytes.NewBufferString("world")))
@@ -784,7 +784,7 @@ func createLiveCacheEntry(t *testing.T, ctx context.Context, client *ent.Client,
 
 func TestCreateUploadRejectsExistingLiveEntry(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 	createLiveCacheEntry(t, ctx, client, filesystem, "live-entry", "key")
 
@@ -796,7 +796,7 @@ func TestCreateUploadRejectsExistingLiveEntry(t *testing.T) {
 
 func TestCreateUploadAllowsNonExactTuples(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	createLiveCacheEntry(t, ctx, client, filesystem, "live-entry", "key")
 
 	tests := []struct {
@@ -832,7 +832,7 @@ func TestCreateUploadAllowsNonExactTuples(t *testing.T) {
 
 func TestCreateUploadAllowsReserveWhenLocationFenced(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 	entry := createLiveCacheEntry(t, ctx, client, filesystem, "fenced-entry", "key")
 	_, err := client.StorageLocation.UpdateOneID(entry.LocationId).
@@ -848,7 +848,7 @@ func TestCreateUploadAllowsReserveWhenLocationFenced(t *testing.T) {
 
 func TestCreateUploadAllowsReserveWhenStorageObjectMissing(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 	createMatchedCacheEntry(ctx, client, "missing-object-entry", "key")
 
@@ -861,7 +861,7 @@ func TestCreateUploadAllowsReserveWhenStorageObjectMissing(t *testing.T) {
 func TestCreateUploadFailsOpenWhenLivenessStatErrors(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &objectExistsErrorStorage{Adapter: filesystem, err: errInjectedStorageFailure}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 	createMatchedCacheEntry(ctx, client, "stat-error-entry", "key")
 
@@ -873,7 +873,7 @@ func TestCreateUploadFailsOpenWhenLivenessStatErrors(t *testing.T) {
 
 func TestCreateUploadConcurrentReserveOnExistingEntry(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	scope := writableScope()
 	createLiveCacheEntry(t, ctx, client, filesystem, "contended-entry", "key")
 
@@ -899,7 +899,7 @@ func TestCreateUploadConcurrentReserveOnExistingEntry(t *testing.T) {
 
 func TestDownloadThrottlesLastDownloadedAtUpdates(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 
 	recentLocation := createCacheEntryForDownload(ctx, client, "recent-entry", "recent-folder")
 	require.NoError(t, filesystem.UploadStream(ctx, partObjectName(recentLocation.FolderName, 0), bytes.NewBufferString("recent")))
@@ -931,7 +931,7 @@ func TestDownloadThrottlesLastDownloadedAtUpdates(t *testing.T) {
 
 func TestDownloadSkipsLocationWriteWithoutComposer(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 
 	// Multi-part and unmerged: only the composer-less wiring (filesystem has no
 	// ComposeAdapter) excuses this download from the parts row lock.
@@ -949,7 +949,7 @@ func TestDownloadSkipsLocationWriteWithoutComposer(t *testing.T) {
 
 func TestFailedMergedDownloadDoesNotUpdateLastDownloadedAt(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: &downloadErrorStorage{Adapter: filesystem}})
+	service := newTestService(t, Options{DB: client, Storage: &downloadErrorStorage{Adapter: filesystem}})
 	location := createCacheEntryForDownload(ctx, client, "entry-id", "folder")
 	stale := time.Now().Add(-lastDownloadedAtUpdateInterval - time.Minute).UnixMilli()
 	client.StorageLocation.UpdateOneID(location.ID).
@@ -965,7 +965,7 @@ func TestFailedMergedDownloadDoesNotUpdateLastDownloadedAt(t *testing.T) {
 
 func TestTouchStorageLocationDoesNotOverwriteNewerConcurrentTimestamp(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	location := createCacheEntryForDownload(ctx, client, "entry-id", "folder")
 	stale := time.Now().Add(-lastDownloadedAtUpdateInterval - time.Minute).UnixMilli()
 	client.StorageLocation.UpdateOneID(location.ID).SetLastDownloadedAt(stale).ExecX(ctx)
@@ -981,7 +981,7 @@ func TestTouchStorageLocationDoesNotOverwriteNewerConcurrentTimestamp(t *testing
 func TestLegacyMaterializedSinglePartUsesMergedObjectForDirectDownload(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	client.StorageLocation.UpdateOneID(entry.LocationId).
 		SetMergedAt(time.Now().Add(-time.Hour).UnixMilli()).
@@ -1001,7 +1001,7 @@ func TestLegacyMaterializedSinglePartUsesMergedObjectForDirectDownload(t *testin
 
 func TestLookupPurgesDanglingEntryAndFallsBackToRestoreKey(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	dangling := createMatchedCacheEntry(ctx, client, "dangling-entry", "primary-key")
 	valid := createMatchedCacheEntry(ctx, client, "valid-entry", "restore-key")
 	validLocation := client.StorageLocation.GetX(ctx, valid.LocationId)
@@ -1023,7 +1023,7 @@ func TestLookupPurgesDanglingEntryAndFallsBackToRestoreKey(t *testing.T) {
 func TestLookupUsesConstantCostRepresentationAnchors(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	partsEntry := createMatchedCacheEntry(ctx, client, "parts-entry", "parts-key")
 	partsLocation := client.StorageLocation.GetX(ctx, partsEntry.LocationId)
 	client.StorageLocation.UpdateOneID(partsLocation.ID).SetPartCount(3).ExecX(ctx)
@@ -1051,7 +1051,7 @@ func TestLookupUsesConstantCostRepresentationAnchors(t *testing.T) {
 func TestLookupTreatsPartsDeletedWithoutMergeAsDanglingWithoutStorageProbe(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &storageCallTrackingAdapter{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	client.StorageLocation.UpdateOneID(entry.LocationId).SetPartsDeletedAt(time.Now().UnixMilli()).ExecX(ctx)
 
@@ -1067,7 +1067,7 @@ func TestLookupTreatsPartsDeletedWithoutMergeAsDanglingWithoutStorageProbe(t *te
 func TestLookupPreservesMetadataWhenStorageProbeFails(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &objectExistsErrorStorage{Adapter: filesystem, err: errInjectedStorageFailure}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 
 	result, err := service.GetCacheEntryWithDownloadURL(ctx, []string{"key"}, "version", writableScope(), func(string) string { return "fallback" })
@@ -1081,7 +1081,7 @@ func TestLookupPreservesMetadataWhenStorageProbeFails(t *testing.T) {
 func TestLookupDoesNotPresignDanglingDirectDownload(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &directURLStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 
 	result, err := service.GetCacheEntryWithDownloadURL(ctx, []string{"key"}, "version", writableScope(), func(string) string { return "fallback" })
@@ -1097,7 +1097,7 @@ func TestLookupDoesNotPresignDanglingDirectDownload(t *testing.T) {
 func TestLookupDoesNotDeleteConcurrentReplacement(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := newBlockingObjectExistsStorage(filesystem, "old-folder/parts/0")
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
 	oldLocation := client.StorageLocation.GetX(ctx, entry.LocationId)
 	client.StorageLocation.UpdateOneID(oldLocation.ID).SetFolderName("old-folder").ExecX(ctx)
@@ -1144,7 +1144,7 @@ func TestLookupRevalidatesRepresentationSelectedByDirectLease(t *testing.T) {
 		},
 	}
 	direct := &directURLStorage{Adapter: hook}
-	service := NewService(Options{DB: client, Storage: direct, EnableDirectDownloads: true})
+	service := newTestService(t, Options{DB: client, Storage: direct, EnableDirectDownloads: true})
 
 	result, err := service.GetCacheEntryWithDownloadURL(ctx, []string{"key"}, "version", writableScope(), func(string) string { return "fallback" })
 
@@ -1158,7 +1158,7 @@ func TestLookupRevalidatesRepresentationSelectedByDirectLease(t *testing.T) {
 
 func TestLookupBoundsDanglingPurgeAttempts(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	for index := 0; index < maxDanglingPurgeAttempts+1; index++ {
 		entry := createMatchedCacheEntry(ctx, client, fmt.Sprintf("entry-%02d", index), fmt.Sprintf("prefix-%02d", index))
 		client.CacheEntry.UpdateOneID(entry.ID).SetUpdatedAt(int64(index + 1)).ExecX(ctx)
@@ -1174,7 +1174,7 @@ func TestLookupBoundsDanglingPurgeAttempts(t *testing.T) {
 func TestDirectDownloadsScheduleMaterializationAfterFinalize(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := newBlockingComposeStorage(filesystem)
-	service := NewService(Options{DB: client, Storage: adapter, EnableDirectDownloads: true, MergeConcurrency: 1})
+	service := newTestService(t, Options{DB: client, Storage: adapter, EnableDirectDownloads: true, MergeConcurrency: 1})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -1199,7 +1199,7 @@ func TestDirectDownloadsScheduleMaterializationAfterFinalize(t *testing.T) {
 
 func TestFilesystemDownloadStreamsPartsWithoutMaterializing(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("hello ")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("world")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -1221,7 +1221,7 @@ func TestFilesystemDownloadStreamsPartsWithoutMaterializing(t *testing.T) {
 func TestStalePartsLocationDoesNotRestartCompletedMaterialization(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &trackingComposeStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	mergedAt := time.Now().UnixMilli()
 	location := client.StorageLocation.Create().
 		SetID("location-id").
@@ -1244,7 +1244,7 @@ func TestStalePartsLocationDoesNotRestartCompletedMaterialization(t *testing.T) 
 func TestExpiredMaterializationLeaseCanBeRescheduledByRequest(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &trackingComposeStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("a")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("b")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -1266,7 +1266,7 @@ func TestExpiredMaterializationLeaseCanBeRescheduledByRequest(t *testing.T) {
 
 func TestLostMaterializationOwnerCannotClearSuccessorLease(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
-	service := NewService(Options{DB: client, Storage: filesystem})
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
 	mergeStartedAt := time.Now().UnixMilli()
 	location := client.StorageLocation.Create().
 		SetID("location-id").
@@ -1308,7 +1308,7 @@ func TestDownloadIsIndependentFromBackgroundMaterialization(t *testing.T) {
 func TestSinglePartNeverMaterializes(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &trackingComposeStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("data")))
 	location := createCacheEntryForDownload(ctx, client, "entry-id", "folder")
 
@@ -1328,7 +1328,7 @@ func TestSinglePartNeverMaterializes(t *testing.T) {
 func TestUnsupportedMaterializationIsPersisted(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &trackingComposeStorage{Adapter: filesystem, errors: []error{storage.ErrComposeUnsupported}}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("a")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("b")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -1351,7 +1351,7 @@ func TestUnsupportedMaterializationIsPersisted(t *testing.T) {
 func TestTransientMaterializationFailureCanRetry(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &trackingComposeStorage{Adapter: filesystem, errors: []error{errInjectedStorageFailure}}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("a")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("b")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -1376,7 +1376,7 @@ func TestTransientMaterializationFailureCanRetry(t *testing.T) {
 func TestBackgroundMaterializationsRespectConcurrencyLimit(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := newBlockingComposeStorage(filesystem)
-	service := NewService(Options{DB: client, Storage: adapter, MergeConcurrency: 1})
+	service := newTestService(t, Options{DB: client, Storage: adapter, MergeConcurrency: 1})
 
 	require.NoError(t, filesystem.UploadStream(ctx, "folder-a/parts/0", bytes.NewBufferString("a")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder-a/parts/1", bytes.NewBufferString("a2")))
@@ -1431,13 +1431,13 @@ func TestLongMaterializationRenewsOwnershipAcrossServiceInstances(t *testing.T) 
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := newBlockingComposeStorage(filesystem)
 	lifecycleOptions := storagelifecycle.Options{
-		MaterializationLeaseDuration: 80 * time.Millisecond,
-		LeaseRenewalInterval:         20 * time.Millisecond,
+		MaterializationLeaseDuration: time.Second,
+		LeaseRenewalInterval:         50 * time.Millisecond,
 	}
 	firstLifecycle := storagelifecycle.NewWithOptions(client, lifecycleOptions)
 	secondLifecycle := storagelifecycle.NewWithOptions(client, lifecycleOptions)
-	first := NewService(Options{DB: client, Storage: adapter, MergeConcurrency: 1, Lifecycle: firstLifecycle})
-	second := NewService(Options{DB: client, Storage: adapter, MergeConcurrency: 1, Lifecycle: secondLifecycle})
+	first := newTestService(t, Options{DB: client, Storage: adapter, MergeConcurrency: 1, Lifecycle: firstLifecycle})
+	second := newTestService(t, Options{DB: client, Storage: adapter, MergeConcurrency: 1, Lifecycle: secondLifecycle})
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/0", bytes.NewBufferString("hello ")))
 	require.NoError(t, filesystem.UploadStream(ctx, "folder/parts/1", bytes.NewBufferString("world")))
 	location := createCacheEntryForDownloadWithPartCount(ctx, client, "entry-id", "folder", 2)
@@ -1445,13 +1445,20 @@ func TestLongMaterializationRenewsOwnershipAcrossServiceInstances(t *testing.T) 
 	stream, err := first.Download(ctx, "entry-id")
 	require.NoError(t, err)
 	adapter.waitStarted(t)
-	time.Sleep(140 * time.Millisecond)
+	acquired := client.StorageLocation.GetX(ctx, location.ID)
+	require.NotNil(t, acquired.MergeLeaseExpiresAt)
+	originalExpiresAt := *acquired.MergeLeaseExpiresAt
+	require.Eventually(t, func() bool {
+		now := time.Now().UnixMilli()
+		current := client.StorageLocation.GetX(ctx, location.ID)
+		return now > originalExpiresAt && current.MergeLeaseExpiresAt != nil && *current.MergeLeaseExpiresAt > now
+	}, 5*time.Second, 10*time.Millisecond)
 	second.tryStartMaterialization(client.StorageLocation.GetX(ctx, location.ID), "entry-id")
 
 	select {
 	case <-adapter.started:
 		t.Fatal("a renewed materialization lease was taken over by another service")
-	case <-time.After(60 * time.Millisecond):
+	case <-time.After(100 * time.Millisecond):
 	}
 
 	adapter.releaseOne()
@@ -1495,7 +1502,7 @@ func TestWaitForMergeCompletionPrefersDoneWhenContextIsAlsoCanceled(t *testing.T
 func TestFinalizeQueuesCleanupWithoutStorageIO(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := &failDeleteStorage{Adapter: filesystem}
-	service := NewService(Options{DB: client, Storage: adapter})
+	service := newTestService(t, Options{DB: client, Storage: adapter})
 	scope := writableScope()
 
 	upload, err := service.CreateUpload(ctx, "key", "version", scope)
@@ -1769,7 +1776,7 @@ func startBlockingMaterializationDownload(t *testing.T, contents ...string) *blo
 
 	ctx, client, filesystem := newTestServiceDeps(t)
 	adapter := newBlockingComposeStorage(filesystem)
-	service := NewService(Options{DB: client, Storage: adapter, MergeConcurrency: 1})
+	service := newTestService(t, Options{DB: client, Storage: adapter, MergeConcurrency: 1})
 	for index, content := range contents {
 		require.NoError(t, filesystem.UploadStream(ctx, partObjectName("folder", index), bytes.NewBufferString(content)))
 	}
@@ -1879,6 +1886,14 @@ func newTestServiceDeps(t *testing.T) (context.Context, *ent.Client, *storage.Fi
 	t.Helper()
 
 	return testutil.NewSQLiteFilesystem(t)
+}
+
+func newTestService(tb testing.TB, options Options) *Service {
+	tb.Helper()
+
+	service := NewService(options)
+	testutil.ShutdownCacheServiceOnCleanup(tb, service)
+	return service
 }
 
 func writableScope() auth.CacheScope {
