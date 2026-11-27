@@ -310,26 +310,16 @@ falcondev runner container and a real GitHub Actions job.
 
 ## Performance Benchmark
 
-On this local WSL2 filesystem benchmark, Go v1.0.6 is **2.24x faster for
-upload and 14.09x faster for download** than upstream Node v9.6.2 at 32
-concurrent caches. It also starts **44x faster** and uses **93% less idle
-memory**. Against Go v1.0.5, the same concurrent workload improves upload by
-1.40x and download by 2.05x.
+This project started to address slow uploads and downloads in the upstream
+Node.js server. For most deployments, we now recommend the
+[upstream Rust server](https://github.com/falcondev-oss/github-actions-cache-server).
 
-| Headline result                     |  Node v9.6.2 |     Go v1.0.5 |         Go v1.0.6 |
-|-------------------------------------|-------------:|--------------:|------------------:|
-| 32-cache upload                     | 353.92 MiB/s |  565.71 MiB/s |  **791.28 MiB/s** |
-| 32-cache download                   | 197.00 MiB/s | 1352.89 MiB/s | **2776.57 MiB/s** |
-| 128 MiB upload                      | 385.31 MiB/s |  510.43 MiB/s |  **960.00 MiB/s** |
-| 128 MiB download                    | 273.52 MiB/s |  879.12 MiB/s | **3497.27 MiB/s** |
-| Cold start p50                      |    950.68 ms |  **10.49 ms** |          21.41 ms |
-| Idle RSS                            |   399.68 MiB | **26.28 MiB** |         28.41 MiB |
-| Server writes during 1 GiB download |  1035.75 MiB |   1028.51 MiB |      **1.52 MiB** |
+Go v1.2.3 restores large caches faster on the first read and uses less peak
+memory during transfers. Later restores and large-cache uploads to SeaweedFS
+are comparable, while Rust v10.0.2 handles metadata lookups faster.
+Honestly, I was surprised by how well Go held up against Rust on most metrics.
 
-The main exception is metadata miss throughput: at concurrency 32, Node leads
-with 7,093 requests/s versus 6,215 for v1.0.5 and 6,009 for v1.0.6.
-
-Detailed payload-size, concurrency-scaling, startup/memory, and HTTP/metadata
-tables, plus the test setup and methodology, are in [BENCHMARK.md](BENCHMARK.md).
-These local loopback, warm-page-cache results isolate server overhead; they are
-not forecasts for a real network or disk.
+Go defaults to SQLite `FULL` and file `fsync`. The tested Rust version uses
+SQLite `NORMAL`, which can lose recent metadata commits after a system crash
+or power loss. Full results and the historical Node.js comparison are in
+[BENCHMARK.md](BENCHMARK.md).
