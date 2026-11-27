@@ -14,8 +14,10 @@ import (
 	entschema "entgo.io/ent/dialect/sql/schema"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/migrate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
 	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 
@@ -54,6 +56,118 @@ func TestOpenAndMigrateSQLite(t *testing.T) {
 			require.Equal(t, table, name)
 		})
 	}
+}
+
+func TestOpenAndMigrateSQLiteEnablesWALAndForeignKeysOnEveryConnection(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "cache-server.db")
+
+	client, err := OpenAndMigrate(ctx, config.DBConfig{
+		Driver:     DriverSQLite,
+		SQLitePath: dbPath,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, client.Close())
+	})
+
+	err = client.CacheEntry.Create().
+		SetID("orphan").
+		SetKey("key").
+		SetVersion("version").
+		SetScope("refs/heads/main").
+		SetRepoId("123").
+		SetUpdatedAt(1).
+		SetLocationID("missing-location").
+		Exec(ctx)
+	require.True(t, ent.IsConstraintError(err), "expected foreign key violation, got %v", err)
+
+	drv, err := openSQLiteDriver(ctx, dbPath)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, drv.Close())
+	})
+
+	pools := []struct {
+		name  string
+		db    *sql.DB
+		conns int
+	}{
+		{name: "write", db: drv.DB(), conns: 1},
+		{name: "read", db: drv.read.DB(), conns: sqliteReadConns},
+	}
+	for _, pool := range pools {
+		t.Run(pool.name, func(t *testing.T) {
+			// Hold every connection at once so each check runs on a distinct connection.
+			for index := range pool.conns {
+				conn, err := pool.db.Conn(ctx)
+				require.NoError(t, err)
+				t.Cleanup(func() {
+					require.NoError(t, conn.Close())
+				})
+
+				var journalMode string
+				require.NoError(t, conn.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&journalMode))
+				require.Equal(t, "wal", journalMode, "connection %d", index)
+				var foreignKeys int
+				require.NoError(t, conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeys))
+				require.Equal(t, 1, foreignKeys, "connection %d", index)
+			}
+		})
+	}
+}
+
+func TestSQLiteReadPoolSeesCommittedWrites(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "cache-server.db")
+
+	migrated, err := OpenAndMigrate(ctx, config.DBConfig{
+		Driver:     DriverSQLite,
+		SQLitePath: dbPath,
+	})
+	require.NoError(t, err)
+	require.NoError(t, migrated.Close())
+
+	drv, err := openSQLiteDriver(ctx, dbPath)
+	require.NoError(t, err)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() {
+		require.NoError(t, client.Close())
+	})
+
+	readPartCount := func() int {
+		// Holding the only write connection makes the read fail unless the read pool serves it.
+		writeConn, err := drv.DB().Conn(ctx)
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, writeConn.Close())
+		}()
+		readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		location, err := client.StorageLocation.Query().
+			Where(storagelocation.ID("location-id")).
+			Only(readCtx)
+		require.NoError(t, err)
+		return location.PartCount
+	}
+
+	require.NoError(t, client.StorageLocation.Create().
+		SetID("location-id").
+		SetFolderName("folder").
+		SetPartCount(1).
+		Exec(ctx))
+	require.Equal(t, 1, readPartCount())
+
+	require.NoError(t, client.StorageLocation.UpdateOneID("location-id").SetPartCount(2).Exec(ctx))
+	require.Equal(t, 2, readPartCount())
+}
+
+func TestOpenAndMigrateSQLiteRejectsQuestionMarkInPath(t *testing.T) {
+	_, err := OpenAndMigrate(context.Background(), config.DBConfig{
+		Driver:     DriverSQLite,
+		SQLitePath: filepath.Join(t.TempDir(), "cache?.db"),
+	})
+	require.ErrorContains(t, err, "must not contain '?'")
 }
 
 func TestOpenAndMigrateSQLiteFromOriginalSchema(t *testing.T) {

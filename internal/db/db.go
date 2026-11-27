@@ -36,6 +36,9 @@ const (
 	postgresMigrationLockKey      = int64(2389201325396535817)
 	mysqlMigrationLockWaitSeconds = 10
 	migrationUnlockTimeout        = 5 * time.Second
+
+	sqliteReadConns = 8
+	sqlitePragmas   = "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 )
 
 type openedDatabase struct {
@@ -107,31 +110,76 @@ func backfillStorageLocationRecency(ctx context.Context, exec sqlExecContext, dr
 }
 
 func openSQLite(ctx context.Context, path string) (*openedDatabase, error) {
+	drv, err := openSQLiteDriver(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	return &openedDatabase{
+		client: ent.NewClient(ent.Driver(drv)),
+		sqlDB:  drv.DB(),
+	}, nil
+}
+
+func openSQLiteDriver(ctx context.Context, path string) (*sqliteDriver, error) {
 	if path == "" {
 		return nil, fmt.Errorf("DB_SQLITE_PATH is required")
+	}
+	// modernc.org/sqlite cuts a plain file name at its first '?', which would open another file and drop the pragmas.
+	if strings.Contains(path, "?") {
+		return nil, fmt.Errorf("DB_SQLITE_PATH must not contain '?'")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create sqlite directory: %w", err)
 	}
 
-	sqlDB, err := sql.Open("sqlite", path)
+	writeDB, err := openSQLitePool(ctx, path+sqlitePragmas+"&_txlock=immediate", 1)
+	if err != nil {
+		return nil, err
+	}
+	// query_only makes a write misrouted to the read pool fail instead of contending for the write lock.
+	readDB, err := openSQLitePool(ctx, path+sqlitePragmas+"&_pragma=query_only(1)", sqliteReadConns)
+	if err != nil {
+		_ = writeDB.Close()
+		return nil, err
+	}
+	return &sqliteDriver{
+		Driver: entsqldialect.OpenDB(dialect.SQLite, writeDB),
+		read:   entsqldialect.OpenDB(dialect.SQLite, readDB),
+	}, nil
+}
+
+func openSQLitePool(ctx context.Context, dsn string, conns int) (*sql.DB, error) {
+	sqlDB, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	sqlDB.SetMaxOpenConns(1)
-	if _, err := sqlDB.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("enable sqlite foreign keys: %w", err)
-	}
+	sqlDB.SetMaxOpenConns(conns)
+	sqlDB.SetMaxIdleConns(conns)
 	if err := sqlDB.PingContext(ctx); err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("ping sqlite: %w", err)
 	}
+	return sqlDB, nil
+}
 
-	return &openedDatabase{
-		client: ent.NewClient(ent.Driver(entsqldialect.OpenDB(dialect.SQLite, sqlDB))),
-		sqlDB:  sqlDB,
-	}, nil
+// sqliteDriver sends transactions and writes to the single-connection write
+// pool and non-transactional SELECTs to a query_only read pool, so restores
+// do not queue behind writes.
+type sqliteDriver struct {
+	*entsqldialect.Driver
+	read *entsqldialect.Driver
+}
+
+func (d *sqliteDriver) Query(ctx context.Context, query string, args, v any) error {
+	// ent also sends INSERT ... RETURNING through Query.
+	if strings.HasPrefix(query, "SELECT ") {
+		return d.read.Query(ctx, query, args, v)
+	}
+	return d.Driver.Query(ctx, query, args, v)
+}
+
+func (d *sqliteDriver) Close() error {
+	return errors.Join(d.read.Close(), d.Driver.Close())
 }
 
 func openPostgres(ctx context.Context, cfg config.DBConfig) (*openedDatabase, error) {
