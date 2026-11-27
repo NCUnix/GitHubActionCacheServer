@@ -6,9 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cleanup"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
@@ -43,6 +46,74 @@ func TestExternalMySQLS3BlockManifest(t *testing.T) {
 		t.Skip("set MySQL and S3 integration settings")
 	}
 	runExternalS3BlockManifest(t, openExternalDB(t, t.Context(), dbCfg))
+}
+
+func TestExternalMySQLS3ConcurrentManifestUploads(t *testing.T) {
+	dbCfg, dbOK := externalMySQLConfig()
+	storageCfg, s3OK := externalS3Config()
+	if !dbOK || !s3OK {
+		t.Skip("set MySQL and S3 integration settings")
+	}
+	ctx := t.Context()
+	client := openExternalDB(t, ctx, dbCfg)
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	storageCfg.S3KeyPrefix = uniqueIntegrationCacheKey("concurrent-s3-manifests")
+	ensureExternalS3Bucket(t, ctx, storageCfg)
+	adapter, err := storage.NewS3Adapter(ctx, storageCfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, adapter.Clear(context.Background())) })
+
+	service := newTestCacheService(t, cache.Options{DB: client, Storage: adapter})
+	service.StopAcceptingMerges()
+	scope := auth.CacheScope{RepoID: "123", Scopes: []auth.Scope{{Scope: "refs/heads/main", Permission: 3}}}
+	const uploads = 32
+	const version = "v1"
+	const blockID = "block"
+	keys := make([]string, uploads)
+	sessions := make([]*cache.CreateUploadResult, uploads)
+	for index := range sessions {
+		keys[index] = fmt.Sprintf("cache-%d", index)
+		session, err := service.CreateUpload(ctx, keys[index], version, scope)
+		require.NoError(t, err)
+		sessions[index] = session
+	}
+
+	runConcurrent := func(operation func(index int, uploadID int64) error) {
+		t.Helper()
+		start := make(chan struct{})
+		failures := make([]error, uploads)
+		var workers sync.WaitGroup
+		for index, session := range sessions {
+			workers.Go(func() {
+				<-start
+				failures[index] = operation(index, session.UploadID)
+			})
+		}
+		close(start)
+		workers.Wait()
+		for index, err := range failures {
+			require.NoError(t, err, "upload %d", index)
+		}
+	}
+	runConcurrent(func(index int, uploadID int64) error {
+		return service.UploadBlock(ctx, uploadID, blockID, strings.NewReader(keys[index]))
+	})
+	runConcurrent(func(_ int, uploadID int64) error {
+		return service.CommitBlockList(ctx, uploadID, []string{blockID})
+	})
+	for _, key := range keys {
+		_, err := service.CompleteUpload(ctx, key, version, scope)
+		require.NoError(t, err)
+		match, err := service.GetCacheEntryWithDownloadURL(ctx, []string{key}, version, scope, func(id string) string { return id })
+		require.NoError(t, err)
+		require.NotNil(t, match)
+		restored, err := service.Download(ctx, match.CacheEntry.ID)
+		require.NoError(t, err)
+		data, err := io.ReadAll(restored)
+		require.NoError(t, restored.Close())
+		require.NoError(t, err)
+		require.Equal(t, key, string(data))
+	}
 }
 
 func runExternalS3BlockManifest(t *testing.T, client *ent.Client) {

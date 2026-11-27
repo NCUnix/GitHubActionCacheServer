@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 
+	"entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/blockmanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
@@ -63,17 +64,16 @@ func (s *Service) uploadManifestBlock(ctx context.Context, session *ent.Upload, 
 		if blockID == "" {
 			return saveUploadManifest(receiptCtx, tx, session.ID, []blockmanifest.Part{{Candidate: candidate, Size: counter.bytes}})
 		}
-		hash := hashBlockID(blockID)
-		updated, err := tx.UploadBlock.Update().Where(uploadblock.UploadId(session.ID), uploadblock.BlockHash(hash)).
-			SetCandidateId(candidate.String()).SetSizeBytes(counter.bytes).Save(receiptCtx)
-		if err != nil {
-			return fmt.Errorf("replace uploaded block receipt: %w", err)
-		}
-		if updated != 0 {
-			return nil
-		}
-		if err := tx.UploadBlock.Create().SetUploadId(session.ID).SetBlockHash(hash).
-			SetCandidateId(candidate.String()).SetSizeBytes(counter.bytes).Exec(receiptCtx); err != nil {
+		query, args := sql.Dialect(tx.Client().Dialect()).Insert(uploadblock.Table).
+			Columns(uploadblock.FieldUploadId, uploadblock.FieldBlockHash, uploadblock.FieldCandidateId, uploadblock.FieldSizeBytes).
+			Values(session.ID, hashBlockID(blockID), candidate.String(), counter.bytes).
+			OnConflict(
+				sql.ConflictColumns(uploadblock.FieldUploadId, uploadblock.FieldBlockHash),
+				sql.ResolveWith(func(update *sql.UpdateSet) {
+					update.SetExcluded(uploadblock.FieldCandidateId).SetExcluded(uploadblock.FieldSizeBytes)
+				}),
+			).Query()
+		if _, err := tx.ExecContext(receiptCtx, query, args...); err != nil {
 			return fmt.Errorf("record uploaded block receipt: %w", err)
 		}
 		return nil
@@ -145,10 +145,14 @@ func saveUploadManifest(ctx context.Context, tx *ent.Tx, uploadID int64, parts [
 	if err != nil {
 		return err
 	}
-	if _, err := tx.StorageManifest.Delete().Where(storagemanifest.UploadId(uploadID)).Exec(ctx); err != nil {
-		return fmt.Errorf("remove previous block manifest: %w", err)
-	}
-	if err := tx.StorageManifest.Create().SetUploadId(uploadID).SetParts(data).Exec(ctx); err != nil {
+	query, args := sql.Dialect(tx.Client().Dialect()).Insert(storagemanifest.Table).
+		Columns(storagemanifest.FieldUploadId, storagemanifest.FieldParts).
+		Values(uploadID, data).
+		OnConflict(
+			sql.ConflictColumns(storagemanifest.FieldUploadId),
+			sql.ResolveWith(func(update *sql.UpdateSet) { update.SetExcluded(storagemanifest.FieldParts) }),
+		).Query()
+	if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 		return fmt.Errorf("save upload block manifest: %w", err)
 	}
 	return nil
