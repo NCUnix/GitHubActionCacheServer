@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"entgo.io/ent/dialect"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
@@ -325,34 +326,62 @@ func classifyReaderLocation(location *ent.StorageLocation, options AcquireReader
 }
 
 func (s *Service) RenewReader(ctx context.Context, leaseID string) error {
-	now := s.now()
-	affected, err := s.db.StorageReaderLease.Update().
-		Where(
-			storagereaderlease.ID(leaseID),
-			storagereaderlease.ExpiresAtGT(now.UnixMilli()),
-		).
-		SetExpiresAt(now.Add(s.readerLeaseDuration).UnixMilli()).
-		Save(ctx)
-	if err != nil {
+	if err := s.extendReader(ctx, leaseID, s.readerLeaseDuration); err != nil {
 		return fmt.Errorf("renew storage reader lease: %w", err)
-	}
-	if affected == 0 {
-		return ErrReaderLeaseLost
 	}
 	return nil
 }
 
 func (s *Service) ExtendDirectReader(ctx context.Context, leaseID string) error {
+	if err := s.extendReader(ctx, leaseID, s.directDownloadLeaseDuration()); err != nil {
+		return fmt.Errorf("extend direct-download reader lease: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) extendReader(ctx context.Context, leaseID string, duration time.Duration) error {
+	db := s.db
+	if db.Dialect() != dialect.MySQL {
+		return s.updateReaderExpiry(ctx, db, leaseID, duration)
+	}
+	tx, err := db.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	lease, err := tx.StorageReaderLease.Query().Where(storagereaderlease.ID(leaseID)).
+		Select(storagereaderlease.FieldStorageLocationId).Only(ctx)
+	if ent.IsNotFound(err) {
+		return ErrReaderLeaseLost
+	}
+	if err != nil {
+		return err
+	}
+	_, err = tx.StorageLocation.Query().Where(storagelocation.ID(lease.StorageLocationId)).
+		ForShare().Select(storagelocation.FieldID).Only(ctx)
+	if ent.IsNotFound(err) {
+		return ErrReaderLeaseLost
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.updateReaderExpiry(ctx, tx.Client(), leaseID, duration); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Service) updateReaderExpiry(ctx context.Context, db *ent.Client, leaseID string, duration time.Duration) error {
 	now := s.now()
-	affected, err := s.db.StorageReaderLease.Update().
+	affected, err := db.StorageReaderLease.Update().
 		Where(
 			storagereaderlease.ID(leaseID),
 			storagereaderlease.ExpiresAtGT(now.UnixMilli()),
 		).
-		SetExpiresAt(now.Add(s.directDownloadLeaseDuration()).UnixMilli()).
+		SetExpiresAt(now.Add(duration).UnixMilli()).
 		Save(ctx)
 	if err != nil {
-		return fmt.Errorf("extend direct-download reader lease: %w", err)
+		return err
 	}
 	if affected == 0 {
 		return ErrReaderLeaseLost
@@ -797,13 +826,12 @@ func (s *Service) fenceDetachedLocation(ctx context.Context, db *ent.Client, loc
 		location.DeletionRequestedAt = &requestedAt
 	}
 
-	if _, err := db.StorageReaderLease.Delete().
-		Where(
-			storagereaderlease.StorageLocationId(location.ID),
-			storagereaderlease.ExpiresAtLTE(now.UnixMilli()),
-		).
-		Exec(ctx); err != nil {
+	_, changed, err := purgeExpiredReaderLeases(ctx, db, now.UnixMilli(), storagereaderlease.StorageLocationId(location.ID))
+	if err != nil {
 		return DeletionResult{}, fmt.Errorf("purge expired reader leases for storage deletion: %w", err)
+	}
+	if changed {
+		return result, nil
 	}
 	hasReaders, err := db.StorageReaderLease.Query().
 		Where(
@@ -869,24 +897,25 @@ func (s *Service) ClaimPartsDeletion(ctx context.Context, locationID string) (Pa
 		return PartsDeletionResult{}, fmt.Errorf("query storage location for parts deletion: %w", err)
 	}
 	now := s.now()
-	if _, err := tx.StorageReaderLease.Delete().
-		Where(
-			storagereaderlease.StorageLocationId(location.ID),
-			storagereaderlease.ScopeEQ(storagereaderlease.ScopeParts),
-			storagereaderlease.ExpiresAtLTE(now.UnixMilli()),
-		).
-		Exec(ctx); err != nil {
+	_, changed, err := purgeExpiredReaderLeases(ctx, tx.Client(), now.UnixMilli(),
+		storagereaderlease.StorageLocationId(location.ID),
+		storagereaderlease.ScopeEQ(storagereaderlease.ScopeParts),
+	)
+	if err != nil {
 		return PartsDeletionResult{}, fmt.Errorf("purge expired part reader leases: %w", err)
 	}
-	hasPartReaders, err := tx.StorageReaderLease.Query().
-		Where(
-			storagereaderlease.StorageLocationId(location.ID),
-			storagereaderlease.ScopeEQ(storagereaderlease.ScopeParts),
-			storagereaderlease.ExpiresAtGT(now.UnixMilli()),
-		).
-		Exist(ctx)
-	if err != nil {
-		return PartsDeletionResult{}, fmt.Errorf("query active part reader leases: %w", err)
+	hasPartReaders := changed
+	if !hasPartReaders {
+		hasPartReaders, err = tx.StorageReaderLease.Query().
+			Where(
+				storagereaderlease.StorageLocationId(location.ID),
+				storagereaderlease.ScopeEQ(storagereaderlease.ScopeParts),
+				storagereaderlease.ExpiresAtGT(now.UnixMilli()),
+			).
+			Exist(ctx)
+		if err != nil {
+			return PartsDeletionResult{}, fmt.Errorf("query active part reader leases: %w", err)
+		}
 	}
 	if hasPartReaders {
 		if err := tx.Commit(); err != nil {
@@ -1048,13 +1077,42 @@ func (s *Service) ReleaseMaterialization(ctx context.Context, locationID, token 
 }
 
 func (s *Service) PurgeExpiredReaderLeases(ctx context.Context) (int, error) {
-	deleted, err := s.db.StorageReaderLease.Delete().
-		Where(storagereaderlease.ExpiresAtLTE(s.now().UnixMilli())).
-		Exec(ctx)
+	deleted, _, err := purgeExpiredReaderLeases(ctx, s.db, s.now().UnixMilli())
 	if err != nil {
-		return 0, fmt.Errorf("purge expired storage reader leases: %w", err)
+		return deleted, fmt.Errorf("purge expired storage reader leases: %w", err)
 	}
 	return deleted, nil
+}
+
+func purgeExpiredReaderLeases(ctx context.Context, db *ent.Client, cutoff int64, filters ...predicate.StorageReaderLease) (deleted int, changed bool, err error) {
+	const pageSize = 256
+	expired := storagereaderlease.ExpiresAtLTE(cutoff)
+	query := db.StorageReaderLease.Query().Where(expired).Where(filters...).Order(storagereaderlease.ByID()).Limit(pageSize)
+	cursor := ""
+	for {
+		page := query.Clone()
+		if cursor != "" {
+			page.Where(storagereaderlease.IDGT(cursor))
+		}
+		ids, err := page.IDs(ctx)
+		if err != nil {
+			return deleted, changed, err
+		}
+		for _, id := range ids {
+			count, err := db.StorageReaderLease.Delete().
+				Where(storagereaderlease.ID(id), expired).
+				Exec(ctx)
+			if err != nil {
+				return deleted, changed, err
+			}
+			deleted += count
+			changed = changed || count == 0
+		}
+		if len(ids) < pageSize {
+			return deleted, changed, nil
+		}
+		cursor = ids[len(ids)-1]
+	}
 }
 
 func activeMaterialization(location *ent.StorageLocation, now time.Time) bool {

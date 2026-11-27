@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/hook"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/testutil"
 	"github.com/stretchr/testify/require"
@@ -665,6 +667,72 @@ func TestPartsDeletionWaitsForPartsReadersButNotMergedReaders(t *testing.T) {
 	require.Equal(t, 2, result.PartCount)
 	require.NotNil(t, client.StorageLocation.GetX(ctx, location.ID).PartsDeletedAt)
 	require.NoError(t, service.ReleaseReader(ctx, mergedLease.ID))
+}
+
+func TestPartsDeletionDefersWhenExpiredCandidateWasRenewed(t *testing.T) {
+	ctx, client, _ := testutil.NewSQLiteFilesystem(t)
+	now := time.Now().Truncate(time.Millisecond)
+	service := NewWithOptions(client, Options{Now: func() time.Time { return now }})
+	location := createLifecycleEntry(ctx, client, "entry", "location", 2)
+	lease, err := service.AcquireReader(ctx, "entry", AcquireReaderOptions{})
+	require.NoError(t, err)
+	client.StorageLocation.UpdateOneID(location.ID).SetMergedAt(now.UnixMilli()).ExecX(ctx)
+	now = lease.ExpiresAt
+
+	renewed := false
+	client.StorageReaderLease.Use(func(next ent.Mutator) ent.Mutator {
+		return hook.StorageReaderLeaseFunc(func(ctx context.Context, mutation *ent.StorageReaderLeaseMutation) (ent.Value, error) {
+			if mutation.Op().Is(ent.OpDelete) && !renewed {
+				renewed = true
+				if err := mutation.Client().StorageReaderLease.UpdateOneID(lease.ID).
+					SetExpiresAt(now.Add(ReaderLeaseDuration).UnixMilli()).Exec(ctx); err != nil {
+					return nil, err
+				}
+			}
+			return next.Mutate(ctx, mutation)
+		})
+	})
+
+	result, err := service.ClaimPartsDeletion(ctx, location.ID)
+	require.NoError(t, err)
+	require.True(t, renewed)
+	require.Nil(t, result.Task)
+	require.Nil(t, client.StorageLocation.GetX(ctx, location.ID).PartsDeletedAt)
+	require.Equal(t, now.Add(ReaderLeaseDuration).UnixMilli(), client.StorageReaderLease.GetX(ctx, lease.ID).ExpiresAt)
+}
+
+func TestExpiredReaderLeaseSweepPaginatesAndDeletesByID(t *testing.T) {
+	ctx, client, log := testutil.NewRecordingSQLiteClient(t)
+	location := createLifecycleEntry(ctx, client, "entry", "location", 1)
+	now := time.Now().Truncate(time.Millisecond)
+	service := NewWithOptions(client, Options{Now: func() time.Time { return now }})
+	const expiredCount = 257
+	leases := make([]*ent.StorageReaderLeaseCreate, 0, expiredCount+1)
+	for index := range expiredCount + 1 {
+		expiry := now
+		if index == expiredCount {
+			expiry = expiry.Add(time.Millisecond)
+		}
+		leases = append(leases, client.StorageReaderLease.Create().SetID(fmt.Sprintf("lease-%03d", index)).
+			SetStorageLocationId(location.ID).SetScope(storagereaderlease.ScopeParts).SetExpiresAt(expiry.UnixMilli()))
+	}
+	client.StorageReaderLease.CreateBulk(leases...).ExecX(ctx)
+	log.Reset()
+
+	count, err := service.PurgeExpiredReaderLeases(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expiredCount, count)
+	statements := log.Lines()
+	require.Len(t, statements, expiredCount+2)
+	require.Contains(t, statements[0], "ORDER BY `storage_reader_leases`.`id`")
+	require.Contains(t, statements[expiredCount], "`storage_reader_leases`.`id` > ?")
+	for _, statement := range statements {
+		if strings.Contains(statement, "query=DELETE ") {
+			require.Contains(t, statement, "`storage_reader_leases`.`id` = ?")
+			require.Contains(t, statement, "`storage_reader_leases`.`expiresAt` <= ?")
+		}
+	}
+	require.Equal(t, "lease-257", client.StorageReaderLease.Query().OnlyIDX(ctx))
 }
 
 func TestReaderLeaseForeignKeyPreventsDeletingDurableEvidence(t *testing.T) {
