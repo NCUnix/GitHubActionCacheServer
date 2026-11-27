@@ -14,6 +14,8 @@ import (
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/hook"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storagelifecycle"
@@ -794,6 +796,99 @@ func TestReplacementLocksOldLocationBeforeUpdatingEntry(t *testing.T) {
 
 	require.NotEqual(t, entry.LocationId, client.CacheEntry.GetX(ctx, entry.ID).LocationId)
 	testutil.RequireLocationLockedBeforeCacheEntryWrites(t, log.Lines(), entry.LocationId)
+}
+
+// changeCacheEntryBeforeReplace runs change inside the finalize transaction right before its cache entry update.
+func changeCacheEntryBeforeReplace(client *ent.Client, change func(context.Context, *ent.Client) error) {
+	changed, replayed := false, false
+	client.CacheEntry.Use(func(next ent.Mutator) ent.Mutator {
+		return hook.CacheEntryFunc(func(ctx context.Context, m *ent.CacheEntryMutation) (ent.Value, error) {
+			// UpdateOne also matches so the hook fires on an unconditional UpdateOneID replacement.
+			if !changed && m.Op().Is(ent.OpUpdate|ent.OpUpdateOne) {
+				changed = true
+				if err := change(ctx, m.Client()); err != nil {
+					return nil, err
+				}
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+	// The failed attempt's rollback also undoes change, so replay it when the next attempt creates its location, as if another transaction had committed it.
+	client.StorageLocation.Use(func(next ent.Mutator) ent.Mutator {
+		return hook.StorageLocationFunc(func(ctx context.Context, m *ent.StorageLocationMutation) (ent.Value, error) {
+			if changed && !replayed && m.Op().Is(ent.OpCreate) {
+				replayed = true
+				if err := change(ctx, m.Client()); err != nil {
+					return nil, err
+				}
+			}
+			return next.Mutate(ctx, m)
+		})
+	})
+}
+
+func TestCompleteUploadRetriesWhenEntryDeletedBeforeReplace(t *testing.T) {
+	ctx, client, filesystem := newTestServiceDeps(t)
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
+	scope := writableScope()
+	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
+	// A fenced location lets CreateUpload reserve while the entry still points at it.
+	client.StorageLocation.UpdateOneID(entry.LocationId).
+		SetDeletionRequestedAt(time.Now().UnixMilli()).
+		ExecX(ctx)
+
+	upload, err := service.CreateUpload(ctx, "key", "version", scope)
+	require.NoError(t, err)
+	require.NoError(t, service.UploadPart(ctx, upload.UploadID, bytes.NewBufferString("replacement")))
+	folderName := client.Upload.GetX(ctx, upload.UploadID).FolderName
+	changeCacheEntryBeforeReplace(client, func(ctx context.Context, tx *ent.Client) error {
+		return tx.CacheEntry.DeleteOneID(entry.ID).Exec(ctx)
+	})
+
+	_, err = service.CompleteUpload(ctx, "key", "version", scope)
+	require.NoError(t, err)
+
+	entries := client.CacheEntry.Query().
+		Where(
+			cacheentry.Key("key"),
+			cacheentry.Version("version"),
+			cacheentry.Scope("refs/heads/main"),
+			cacheentry.RepoId("123"),
+		).
+		AllX(ctx)
+	require.Len(t, entries, 1)
+	require.Equal(t, folderName, client.StorageLocation.GetX(ctx, entries[0].LocationId).FolderName)
+}
+
+func TestCompleteUploadRetriesWhenEntryMovedBeforeReplace(t *testing.T) {
+	ctx, client, filesystem := newTestServiceDeps(t)
+	service := newTestService(t, Options{DB: client, Storage: filesystem})
+	scope := writableScope()
+	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
+	// A fenced location lets CreateUpload reserve while the entry still points at it.
+	client.StorageLocation.UpdateOneID(entry.LocationId).
+		SetDeletionRequestedAt(time.Now().UnixMilli()).
+		ExecX(ctx)
+	moved := client.StorageLocation.Create().
+		SetID("moved-location").
+		SetFolderName("moved-folder").
+		SetPartCount(1).
+		SaveX(ctx)
+
+	upload, err := service.CreateUpload(ctx, "key", "version", scope)
+	require.NoError(t, err)
+	require.NoError(t, service.UploadPart(ctx, upload.UploadID, bytes.NewBufferString("replacement")))
+	folderName := client.Upload.GetX(ctx, upload.UploadID).FolderName
+	changeCacheEntryBeforeReplace(client, func(ctx context.Context, tx *ent.Client) error {
+		return tx.CacheEntry.UpdateOneID(entry.ID).SetLocationId(moved.ID).Exec(ctx)
+	})
+
+	_, err = service.CompleteUpload(ctx, "key", "version", scope)
+	require.NoError(t, err)
+
+	replaced := client.CacheEntry.GetX(ctx, entry.ID)
+	require.Equal(t, folderName, client.StorageLocation.GetX(ctx, replaced.LocationId).FolderName)
+	require.NotNil(t, client.StorageLocation.GetX(ctx, moved.ID).DeletionRequestedAt)
 }
 
 func createLiveCacheEntry(t *testing.T, ctx context.Context, client *ent.Client, adapter storage.Adapter, id, key string) *ent.CacheEntry {

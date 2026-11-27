@@ -41,6 +41,7 @@ const (
 	mergeCleanupTimeout            = 10 * time.Second
 	maxDanglingPurgeAttempts       = 10
 	maxUploadContentionAttempts    = 5
+	maxFinalizeAttempts            = 3
 )
 
 // MaxBlockListEntries is the Azure block blob protocol limit.
@@ -54,6 +55,8 @@ var (
 	ErrPartCountMismatch   = errors.New("uploaded part count does not match actual part count in storage")
 	ErrBlockListTooLarge   = errors.New("block list exceeds 50000 entries")
 	ErrCacheNotFound       = errors.New("cache not found")
+
+	errCacheEntryChanged = errors.New("cache entry changed during finalize")
 )
 
 // BlockListCommit is an upload-scoped capability prepared before the block
@@ -511,7 +514,18 @@ func (s *Service) CompleteUpload(ctx context.Context, key, version string, scope
 		return 0, err
 	}
 
-	location, cacheEntryID, err := s.completeUploadRecord(ctx, currentUpload, writeScope, scope.RepoID, partCount, sizeBytes)
+	var location *ent.StorageLocation
+	var cacheEntryID string
+	// Retry the whole transaction: under MySQL REPEATABLE READ a re-read in the same transaction still returns the old snapshot.
+	for range maxFinalizeAttempts {
+		location, cacheEntryID, err = s.completeUploadRecord(ctx, currentUpload, writeScope, scope.RepoID, partCount, sizeBytes)
+		if !errors.Is(err, errCacheEntryChanged) {
+			break
+		}
+	}
+	if errors.Is(err, errCacheEntryChanged) {
+		return 0, fmt.Errorf("finalize upload after %d attempts: %w", maxFinalizeAttempts, err)
+	}
 	if err != nil {
 		return 0, err
 	}
@@ -940,11 +954,19 @@ func (s *Service) completeUploadRecord(ctx context.Context, currentUpload *ent.U
 				return nil, "", err
 			}
 		}
-		if _, err := tx.CacheEntry.UpdateOneID(existingCacheEntry.ID).
+		updated, err := tx.CacheEntry.Update().
+			Where(
+				cacheentry.ID(existingCacheEntry.ID),
+				cacheentry.LocationId(existingCacheEntry.LocationId),
+			).
 			SetUpdatedAt(now).
 			SetLocation(location).
-			Save(ctx); err != nil {
+			Save(ctx)
+		if err != nil {
 			return nil, "", fmt.Errorf("update cache entry: %w", err)
+		}
+		if updated == 0 {
+			return nil, "", errCacheEntryChanged
 		}
 		if existingCacheEntry.LocationId != "" {
 			if _, err := s.lifecycle.FenceDetachedLocation(ctx, tx.Client(), existingCacheEntry.LocationId); err != nil {
