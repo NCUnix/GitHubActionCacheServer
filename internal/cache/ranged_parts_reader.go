@@ -109,7 +109,7 @@ func (r *rangedPartsReadCloser) currentStream() (io.ReadCloser, error) {
 		count := min(available, r.remaining)
 		r.mu.Unlock()
 
-		stream, err := r.storage.CreateRangedDownloadStream(r.ctx, partObjectName(r.folder, partIndex), partOffset, count)
+		stream, err := r.storage.CreateRangedDownloadStream(r.ctx, r.parts.objectName(r.folder, partIndex), partOffset, count)
 		if err != nil {
 			if errors.Is(err, storage.ErrObjectNotFound) {
 				return nil, ErrCacheNotFound

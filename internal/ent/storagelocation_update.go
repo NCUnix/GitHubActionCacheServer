@@ -13,6 +13,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 )
 
@@ -372,6 +373,25 @@ func (_u *StorageLocationUpdate) AddReaderLeases(v ...*StorageReaderLease) *Stor
 	return _u.AddReaderLeaseIDs(ids...)
 }
 
+// SetManifestID sets the "manifest" edge to the StorageManifest entity by ID.
+func (_u *StorageLocationUpdate) SetManifestID(id int) *StorageLocationUpdate {
+	_u.mutation.SetManifestID(id)
+	return _u
+}
+
+// SetNillableManifestID sets the "manifest" edge to the StorageManifest entity by ID if the given value is not nil.
+func (_u *StorageLocationUpdate) SetNillableManifestID(id *int) *StorageLocationUpdate {
+	if id != nil {
+		_u = _u.SetManifestID(*id)
+	}
+	return _u
+}
+
+// SetManifest sets the "manifest" edge to the StorageManifest entity.
+func (_u *StorageLocationUpdate) SetManifest(v *StorageManifest) *StorageLocationUpdate {
+	return _u.SetManifestID(v.ID)
+}
+
 // Mutation returns the StorageLocationMutation object of the builder.
 func (_u *StorageLocationUpdate) Mutation() *StorageLocationMutation {
 	return _u.mutation
@@ -417,6 +437,12 @@ func (_u *StorageLocationUpdate) RemoveReaderLeases(v ...*StorageReaderLease) *S
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveReaderLeaseIDs(ids...)
+}
+
+// ClearManifest clears the "manifest" edge to the StorageManifest entity.
+func (_u *StorageLocationUpdate) ClearManifest() *StorageLocationUpdate {
+	_u.mutation.ClearManifest()
+	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -587,6 +613,9 @@ func (_u *StorageLocationUpdate) sqlSave(ctx context.Context) (_node int, err er
 	if value, ok := _u.mutation.AddedRecencyAt(); ok {
 		_spec.AddField(storagelocation.FieldRecencyAt, field.TypeInt64, value)
 	}
+	if _u.mutation.ManifestAnchorCleared() {
+		_spec.ClearField(storagelocation.FieldManifestAnchor, field.TypeString)
+	}
 	if _u.mutation.CacheEntriesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -670,6 +699,35 @@ func (_u *StorageLocationUpdate) sqlSave(ctx context.Context) (_node int, err er
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(storagereaderlease.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ManifestCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   storagelocation.ManifestTable,
+			Columns: []string{storagelocation.ManifestColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(storagemanifest.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ManifestIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   storagelocation.ManifestTable,
+			Columns: []string{storagelocation.ManifestColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(storagemanifest.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {
@@ -1040,6 +1098,25 @@ func (_u *StorageLocationUpdateOne) AddReaderLeases(v ...*StorageReaderLease) *S
 	return _u.AddReaderLeaseIDs(ids...)
 }
 
+// SetManifestID sets the "manifest" edge to the StorageManifest entity by ID.
+func (_u *StorageLocationUpdateOne) SetManifestID(id int) *StorageLocationUpdateOne {
+	_u.mutation.SetManifestID(id)
+	return _u
+}
+
+// SetNillableManifestID sets the "manifest" edge to the StorageManifest entity by ID if the given value is not nil.
+func (_u *StorageLocationUpdateOne) SetNillableManifestID(id *int) *StorageLocationUpdateOne {
+	if id != nil {
+		_u = _u.SetManifestID(*id)
+	}
+	return _u
+}
+
+// SetManifest sets the "manifest" edge to the StorageManifest entity.
+func (_u *StorageLocationUpdateOne) SetManifest(v *StorageManifest) *StorageLocationUpdateOne {
+	return _u.SetManifestID(v.ID)
+}
+
 // Mutation returns the StorageLocationMutation object of the builder.
 func (_u *StorageLocationUpdateOne) Mutation() *StorageLocationMutation {
 	return _u.mutation
@@ -1085,6 +1162,12 @@ func (_u *StorageLocationUpdateOne) RemoveReaderLeases(v ...*StorageReaderLease)
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveReaderLeaseIDs(ids...)
+}
+
+// ClearManifest clears the "manifest" edge to the StorageManifest entity.
+func (_u *StorageLocationUpdateOne) ClearManifest() *StorageLocationUpdateOne {
+	_u.mutation.ClearManifest()
+	return _u
 }
 
 // Where appends a list predicates to the StorageLocationUpdate builder.
@@ -1285,6 +1368,9 @@ func (_u *StorageLocationUpdateOne) sqlSave(ctx context.Context) (_node *Storage
 	if value, ok := _u.mutation.AddedRecencyAt(); ok {
 		_spec.AddField(storagelocation.FieldRecencyAt, field.TypeInt64, value)
 	}
+	if _u.mutation.ManifestAnchorCleared() {
+		_spec.ClearField(storagelocation.FieldManifestAnchor, field.TypeString)
+	}
 	if _u.mutation.CacheEntriesCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1368,6 +1454,35 @@ func (_u *StorageLocationUpdateOne) sqlSave(ctx context.Context) (_node *Storage
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(storagereaderlease.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ManifestCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   storagelocation.ManifestTable,
+			Columns: []string{storagelocation.ManifestColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(storagemanifest.FieldID, field.TypeInt),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ManifestIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   storagelocation.ManifestTable,
+			Columns: []string{storagelocation.ManifestColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(storagemanifest.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

@@ -4,6 +4,7 @@ package upload
 
 import (
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -33,8 +34,28 @@ const (
 	FieldCommittedPartCount = "committedPartCount"
 	// FieldTupleHash holds the string denoting the tuplehash field in the database.
 	FieldTupleHash = "tupleHash"
+	// FieldBlockManifestVersion holds the string denoting the blockmanifestversion field in the database.
+	FieldBlockManifestVersion = "blockManifestVersion"
+	// EdgeBlocks holds the string denoting the blocks edge name in mutations.
+	EdgeBlocks = "blocks"
+	// EdgeManifest holds the string denoting the manifest edge name in mutations.
+	EdgeManifest = "manifest"
 	// Table holds the table name of the upload in the database.
 	Table = "uploads"
+	// BlocksTable is the table that holds the blocks relation/edge.
+	BlocksTable = "upload_blocks"
+	// BlocksInverseTable is the table name for the UploadBlock entity.
+	// It exists in this package in order to avoid circular dependency with the "uploadblock" package.
+	BlocksInverseTable = "upload_blocks"
+	// BlocksColumn is the table column denoting the blocks relation/edge.
+	BlocksColumn = "uploadId"
+	// ManifestTable is the table that holds the manifest relation/edge.
+	ManifestTable = "storage_manifests"
+	// ManifestInverseTable is the table name for the StorageManifest entity.
+	// It exists in this package in order to avoid circular dependency with the "storagemanifest" package.
+	ManifestInverseTable = "storage_manifests"
+	// ManifestColumn is the table column denoting the manifest relation/edge.
+	ManifestColumn = "uploadId"
 )
 
 // Columns holds all SQL columns for upload fields.
@@ -51,6 +72,7 @@ var Columns = []string{
 	FieldFolderName,
 	FieldCommittedPartCount,
 	FieldTupleHash,
+	FieldBlockManifestVersion,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -86,6 +108,10 @@ var (
 	CommittedPartCountValidator func(int) error
 	// TupleHashValidator is a validator for the "tupleHash" field. It is called by the builders before save.
 	TupleHashValidator func(string) error
+	// DefaultBlockManifestVersion holds the default value on creation for the "blockManifestVersion" field.
+	DefaultBlockManifestVersion int64
+	// BlockManifestVersionValidator is a validator for the "blockManifestVersion" field. It is called by the builders before save.
+	BlockManifestVersionValidator func(int64) error
 )
 
 // OrderOption defines the ordering options for the Upload queries.
@@ -149,4 +175,44 @@ func ByCommittedPartCount(opts ...sql.OrderTermOption) OrderOption {
 // ByTupleHash orders the results by the tupleHash field.
 func ByTupleHash(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTupleHash, opts...).ToFunc()
+}
+
+// ByBlockManifestVersion orders the results by the blockManifestVersion field.
+func ByBlockManifestVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBlockManifestVersion, opts...).ToFunc()
+}
+
+// ByBlocksCount orders the results by blocks count.
+func ByBlocksCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newBlocksStep(), opts...)
+	}
+}
+
+// ByBlocks orders the results by blocks terms.
+func ByBlocks(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newBlocksStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByManifestField orders the results by manifest field.
+func ByManifestField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newManifestStep(), sql.OrderByField(field, opts...))
+	}
+}
+func newBlocksStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(BlocksInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, BlocksTable, BlocksColumn),
+	)
+}
+func newManifestStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ManifestInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, ManifestTable, ManifestColumn),
+	)
 }

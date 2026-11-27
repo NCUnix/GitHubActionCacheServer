@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 )
 
@@ -187,6 +188,20 @@ func (_c *StorageLocationCreate) SetNillableRecencyAt(v *int64) *StorageLocation
 	return _c
 }
 
+// SetManifestAnchor sets the "manifestAnchor" field.
+func (_c *StorageLocationCreate) SetManifestAnchor(v string) *StorageLocationCreate {
+	_c.mutation.SetManifestAnchor(v)
+	return _c
+}
+
+// SetNillableManifestAnchor sets the "manifestAnchor" field if the given value is not nil.
+func (_c *StorageLocationCreate) SetNillableManifestAnchor(v *string) *StorageLocationCreate {
+	if v != nil {
+		_c.SetManifestAnchor(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *StorageLocationCreate) SetID(v string) *StorageLocationCreate {
 	_c.mutation.SetID(v)
@@ -221,6 +236,25 @@ func (_c *StorageLocationCreate) AddReaderLeases(v ...*StorageReaderLease) *Stor
 		ids[i] = v[i].ID
 	}
 	return _c.AddReaderLeaseIDs(ids...)
+}
+
+// SetManifestID sets the "manifest" edge to the StorageManifest entity by ID.
+func (_c *StorageLocationCreate) SetManifestID(id int) *StorageLocationCreate {
+	_c.mutation.SetManifestID(id)
+	return _c
+}
+
+// SetNillableManifestID sets the "manifest" edge to the StorageManifest entity by ID if the given value is not nil.
+func (_c *StorageLocationCreate) SetNillableManifestID(id *int) *StorageLocationCreate {
+	if id != nil {
+		_c = _c.SetManifestID(*id)
+	}
+	return _c
+}
+
+// SetManifest sets the "manifest" edge to the StorageManifest entity.
+func (_c *StorageLocationCreate) SetManifest(v *StorageManifest) *StorageLocationCreate {
+	return _c.SetManifestID(v.ID)
 }
 
 // Mutation returns the StorageLocationMutation object of the builder.
@@ -394,6 +428,10 @@ func (_c *StorageLocationCreate) createSpec() (*StorageLocation, *sqlgraph.Creat
 		_spec.SetField(storagelocation.FieldRecencyAt, field.TypeInt64, value)
 		_node.RecencyAt = value
 	}
+	if value, ok := _c.mutation.ManifestAnchor(); ok {
+		_spec.SetField(storagelocation.FieldManifestAnchor, field.TypeString, value)
+		_node.ManifestAnchor = &value
+	}
 	if nodes := _c.mutation.CacheEntriesIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -419,6 +457,22 @@ func (_c *StorageLocationCreate) createSpec() (*StorageLocation, *sqlgraph.Creat
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(storagereaderlease.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ManifestIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   storagelocation.ManifestTable,
+			Columns: []string{storagelocation.ManifestColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(storagemanifest.FieldID, field.TypeInt),
 			},
 		}
 		for _, k := range nodes {

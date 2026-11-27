@@ -17,12 +17,14 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/blockmanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cachekey"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	entpredicate "github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
@@ -385,6 +387,9 @@ func (s *Service) UploadPart(ctx context.Context, uploadID int64, stream io.Read
 	if err != nil {
 		return err
 	}
+	if currentUpload.BlockManifestVersion > 0 {
+		return s.uploadManifestBlock(ctx, currentUpload, "", stream)
+	}
 	committedPartCount := 1
 	return s.uploadObject(ctx, currentUpload, partObjectName(currentUpload.FolderName, 0), stream, &committedPartCount)
 }
@@ -393,6 +398,12 @@ func (s *Service) UploadBlock(ctx context.Context, uploadID int64, blockID strin
 	currentUpload, err := s.uploadByID(ctx, uploadID)
 	if err != nil {
 		return err
+	}
+	if currentUpload.BlockManifestVersion > 0 {
+		if blockID == "" {
+			return ErrPartCountMismatch
+		}
+		return s.uploadManifestBlock(ctx, currentUpload, blockID, stream)
 	}
 	return s.uploadObject(ctx, currentUpload, blockObjectName(currentUpload.FolderName, blockID), stream, nil)
 }
@@ -419,6 +430,9 @@ func (c *BlockListCommit) Commit(ctx context.Context, blockIDs []string) error {
 	}
 	if len(blockIDs) == 0 {
 		return nil
+	}
+	if c.upload.BlockManifestVersion > 0 {
+		return c.service.commitManifestBlocks(ctx, c.upload.ID, blockIDs)
 	}
 
 	if err := c.service.withUploadActivity(ctx, c.upload.ID, func(activityCtx context.Context) error {
@@ -459,17 +473,56 @@ func (s *Service) CompleteUpload(ctx context.Context, key, version string, scope
 		return 0, err
 	}
 
-	if currentUpload.FinishedPartUploadCount == 0 {
-		s.deleteUploadBestEffort(ctx, currentUpload)
-		return 0, ErrNoPartsUploaded
-	}
-
 	var partCount int
 	var sizeBytes int64
 	var finalizedPartIndex *partIndex
-	err = s.withUploadActivity(ctx, currentUpload.ID, func(activityCtx context.Context) error {
-		var validationErr error
-		partCount, validationErr = s.committedPartCount(activityCtx, currentUpload)
+	if currentUpload.BlockManifestVersion == 0 {
+		finalizedPartIndex, err = s.inspectLegacyUpload(ctx, currentUpload)
+		if err != nil {
+			if errors.Is(err, ErrNoPartsUploaded) || errors.Is(err, ErrPartCountMismatch) {
+				s.deleteUploadBestEffort(ctx, currentUpload)
+			}
+			return 0, err
+		}
+		partCount, sizeBytes = len(finalizedPartIndex.ends), finalizedPartIndex.total
+	}
+
+	// Retry the whole transaction: under MySQL REPEATABLE READ a re-read in the same transaction still returns the old snapshot.
+	for range maxFinalizeAttempts {
+		location, cacheEntryID, err := s.completeUploadRecord(ctx, currentUpload, writeScope, scope.RepoID, partCount, sizeBytes)
+		if errors.Is(err, errCacheEntryChanged) {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		if finalizedPartIndex != nil && partCount >= 2 {
+			s.partIndexes.add(partIndexKey{
+				locationID: location.ID,
+				folderName: location.FolderName,
+				partCount:  location.PartCount,
+			}, finalizedPartIndex)
+		}
+		if s.enableDirectDownloads {
+			s.tryStartMaterialization(location, cacheEntryID)
+		}
+		if s.capacity != nil {
+			s.capacity.Trigger()
+		}
+
+		return currentUpload.ID, nil
+	}
+	return 0, fmt.Errorf("finalize upload after %d attempts: %w", maxFinalizeAttempts, errCacheEntryChanged)
+}
+
+func (s *Service) inspectLegacyUpload(ctx context.Context, currentUpload *ent.Upload) (*partIndex, error) {
+	if currentUpload.FinishedPartUploadCount == 0 {
+		return nil, ErrNoPartsUploaded
+	}
+
+	var finalizedPartIndex *partIndex
+	err := s.withUploadActivity(ctx, currentUpload.ID, func(activityCtx context.Context) error {
+		partCount, validationErr := s.committedPartCount(activityCtx, currentUpload)
 		if validationErr != nil {
 			return validationErr
 		}
@@ -501,46 +554,9 @@ func (s *Service) CompleteUpload(ctx context.Context, key, version string, scope
 		if validationErr != nil {
 			return fmt.Errorf("inspect finalized cache parts: %w", validationErr)
 		}
-		sizeBytes = finalizedPartIndex.total
 		return nil
 	})
-	if err != nil {
-		if errors.Is(err, ErrNoPartsUploaded) || errors.Is(err, ErrPartCountMismatch) {
-			s.deleteUploadBestEffort(ctx, currentUpload)
-		}
-		return 0, err
-	}
-
-	var location *ent.StorageLocation
-	var cacheEntryID string
-	// Retry the whole transaction: under MySQL REPEATABLE READ a re-read in the same transaction still returns the old snapshot.
-	for range maxFinalizeAttempts {
-		location, cacheEntryID, err = s.completeUploadRecord(ctx, currentUpload, writeScope, scope.RepoID, partCount, sizeBytes)
-		if !errors.Is(err, errCacheEntryChanged) {
-			break
-		}
-	}
-	if errors.Is(err, errCacheEntryChanged) {
-		return 0, fmt.Errorf("finalize upload after %d attempts: %w", maxFinalizeAttempts, err)
-	}
-	if err != nil {
-		return 0, err
-	}
-	if partCount >= 2 {
-		s.partIndexes.add(partIndexKey{
-			locationID: location.ID,
-			folderName: location.FolderName,
-			partCount:  location.PartCount,
-		}, finalizedPartIndex)
-	}
-	if s.enableDirectDownloads {
-		s.tryStartMaterialization(location, cacheEntryID)
-	}
-	if s.capacity != nil {
-		s.capacity.Trigger()
-	}
-
-	return currentUpload.ID, nil
+	return finalizedPartIndex, err
 }
 
 func (s *Service) GetCacheEntryWithDownloadURL(ctx context.Context, keys []string, version string, scope auth.CacheScope, fallbackDownloadURL func(string) string) (*MatchResult, error) {
@@ -650,14 +666,21 @@ func representationObjectName(location *ent.StorageLocation) (string, bool) {
 	if location.PartsDeletedAt != nil || location.PartCount < 1 {
 		return "", false
 	}
-	return partObjectName(location.FolderName, 0), true
+	return anchorObjectName(location), true
 }
 
 func readerLeaseObjectName(lease *storagelifecycle.ReaderLease) string {
 	if lease.Scope == storagereaderlease.ScopeStorage {
 		return mergedObjectName(lease.Location.FolderName)
 	}
-	return partObjectName(lease.Location.FolderName, 0)
+	return anchorObjectName(lease.Location)
+}
+
+func anchorObjectName(location *ent.StorageLocation) string {
+	if location.ManifestAnchor != nil {
+		return blockmanifest.Object(location.FolderName, *location.ManifestAnchor)
+	}
+	return partObjectName(location.FolderName, 0)
 }
 
 func (s *Service) MatchCacheEntry(ctx context.Context, keys []string, version string, scope auth.CacheScope) (*ent.CacheEntry, error) {
@@ -716,6 +739,10 @@ func ReadScopesByPermission(scope auth.CacheScope) []string {
 
 func (s *Service) createUploadRecord(ctx context.Context, key, version, scope, repoID string) (int64, error) {
 	tupleHash := uploadTupleHash(key, version, scope, repoID)
+	var manifestVersion int64
+	if _, ok := s.storage.(storage.FolderPruner); ok {
+		manifestVersion = 1
+	}
 	for range 5 {
 		id, err := randomPositiveInt64()
 		if err != nil {
@@ -726,6 +753,7 @@ func (s *Service) createUploadRecord(ctx context.Context, key, version, scope, r
 			SetID(id).
 			SetFolderName(strconv.FormatInt(id, 10)).
 			SetCommittedPartCount(0).
+			SetBlockManifestVersion(manifestVersion).
 			SetCreatedAt(s.now().UnixMilli()).
 			SetKey(key).
 			SetVersion(version).
@@ -917,12 +945,35 @@ func (s *Service) completeUploadRecord(ctx context.Context, currentUpload *ent.U
 		}
 	}()
 
+	var manifest *ent.StorageManifest
+	var anchor *string
+	if currentUpload.BlockManifestVersion > 0 {
+		if err := s.lockManifestUpload(ctx, tx, currentUpload.ID); err != nil {
+			return nil, "", err
+		}
+		manifest, err = tx.StorageManifest.Query().Where(storagemanifest.UploadId(currentUpload.ID)).Only(ctx)
+		if ent.IsNotFound(err) {
+			return nil, "", ErrNoPartsUploaded
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read committed block manifest: %w", err)
+		}
+		parts, total, err := blockmanifest.Decode(manifest.Parts)
+		if err != nil {
+			return nil, "", err
+		}
+		partCount, sizeBytes = len(parts), total
+		firstCandidate := parts[0].Candidate.String()
+		anchor = &firstCandidate
+	}
+
 	now := s.now().UnixMilli()
 	locationID := uuid.NewString()
 	location, err := tx.StorageLocation.Create().
 		SetID(locationID).
 		SetFolderName(currentUpload.FolderName).
 		SetPartCount(partCount).
+		SetNillableManifestAnchor(anchor).
 		SetSizeBytes(sizeBytes).
 		SetRecencyAt(now).
 		Save(ctx)
@@ -986,7 +1037,12 @@ func (s *Service) completeUploadRecord(ctx context.Context, currentUpload *ent.U
 		cacheEntryID = createdCacheEntry.ID
 	}
 
-	if _, err := storageoutbox.Enqueue(ctx, tx.Client(), blocksFolderName(currentUpload.FolderName)); err != nil {
+	if manifest != nil {
+		if err := tx.StorageManifest.UpdateOneID(manifest.ID).ClearUploadId().
+			SetLocationId(location.ID).SetCandidateGCAt(now).Exec(ctx); err != nil {
+			return nil, "", fmt.Errorf("publish block manifest: %w", err)
+		}
+	} else if _, err := storageoutbox.Enqueue(ctx, tx.Client(), blocksFolderName(currentUpload.FolderName)); err != nil {
 		return nil, "", err
 	}
 
@@ -1063,8 +1119,27 @@ func (s *Service) openMerged(ctx context.Context, location *ent.StorageLocation)
 	return stream, nil
 }
 
-func (s *Service) openParts(ctx context.Context, location *ent.StorageLocation) (io.ReadCloser, error) {
-	return newPartsReadCloser(ctx, s.storage, location.FolderName, location.PartCount), nil
+func (s *Service) openParts(ctx context.Context, leaseID string, location *ent.StorageLocation) (io.ReadCloser, error) {
+	var index *partIndex
+	if location.ManifestAnchor != nil && location.PartCount > 1 {
+		loaded, delayed, err := s.cachedPartIndex(ctx, location)
+		if err != nil {
+			return nil, err
+		}
+		if delayed {
+			if err := s.revalidatePartReader(ctx, leaseID); err != nil {
+				return nil, err
+			}
+		}
+		index = loaded
+	} else if location.ManifestAnchor != nil {
+		stream, err := s.storage.CreateDownloadStream(ctx, anchorObjectName(location))
+		if errors.Is(err, storage.ErrObjectNotFound) {
+			err = ErrCacheNotFound
+		}
+		return stream, err
+	}
+	return newPartsReadCloser(ctx, s.storage, location.FolderName, location.PartCount, index), nil
 }
 
 func (s *Service) committedPartCount(ctx context.Context, currentUpload *ent.Upload) (int, error) {
@@ -1123,15 +1198,10 @@ func (s *Service) materializeLocationInBackground(cacheEntryID string, lease *st
 	defer s.finishReservedMerge()
 	location := lease.Location
 
-	sources := make([]string, location.PartCount)
-	for index := range sources {
-		sources[index] = partObjectName(location.FolderName, index)
-	}
-
 	materializationCtx, cancel := context.WithCancel(s.mergeCtx)
 	renewalDone := make(chan error, 1)
 	go s.renewMaterializationLease(materializationCtx, cancel, lease, renewalDone)
-	composeErr := s.composer.ComposeObjects(materializationCtx, mergedObjectName(location.FolderName), sources)
+	composeErr := s.composeLocation(materializationCtx, location)
 	cancel()
 	renewalErr := <-renewalDone
 	if renewalErr != nil {
@@ -1169,6 +1239,21 @@ func (s *Service) materializeLocationInBackground(cacheEntryID string, lease *st
 	}
 }
 
+func (s *Service) composeLocation(ctx context.Context, location *ent.StorageLocation) error {
+	var index *partIndex
+	if location.ManifestAnchor != nil {
+		var err error
+		index, _, err = s.cachedPartIndex(ctx, location)
+		if err != nil {
+			return err
+		}
+	}
+	sources := make([]string, location.PartCount)
+	for position := range sources {
+		sources[position] = index.objectName(location.FolderName, position)
+	}
+	return s.composer.ComposeObjects(ctx, mergedObjectName(location.FolderName), sources)
+}
 func (s *Service) materializationLogEvent(level zerolog.Level, cacheEntryID, locationID, state, stage string, err error) *zerolog.Event {
 	return s.logger.WithLevel(level).
 		Err(err).

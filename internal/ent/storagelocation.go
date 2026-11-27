@@ -9,6 +9,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 )
 
 // StorageLocation is the model entity for the StorageLocation schema.
@@ -42,6 +43,8 @@ type StorageLocation struct {
 	LastDownloadedAt *int64 `json:"lastDownloadedAt,omitempty"`
 	// RecencyAt holds the value of the "recencyAt" field.
 	RecencyAt int64 `json:"recencyAt,omitempty"`
+	// ManifestAnchor holds the value of the "manifestAnchor" field.
+	ManifestAnchor *string `json:"manifestAnchor,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the StorageLocationQuery when eager-loading is set.
 	Edges        StorageLocationEdges `json:"edges"`
@@ -54,9 +57,11 @@ type StorageLocationEdges struct {
 	CacheEntries []*CacheEntry `json:"cacheEntries,omitempty"`
 	// ReaderLeases holds the value of the readerLeases edge.
 	ReaderLeases []*StorageReaderLease `json:"readerLeases,omitempty"`
+	// Manifest holds the value of the manifest edge.
+	Manifest *StorageManifest `json:"manifest,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // CacheEntriesOrErr returns the CacheEntries value or an error if the edge
@@ -77,6 +82,17 @@ func (e StorageLocationEdges) ReaderLeasesOrErr() ([]*StorageReaderLease, error)
 	return nil, &NotLoadedError{edge: "readerLeases"}
 }
 
+// ManifestOrErr returns the Manifest value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e StorageLocationEdges) ManifestOrErr() (*StorageManifest, error) {
+	if e.Manifest != nil {
+		return e.Manifest, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: storagemanifest.Label}
+	}
+	return nil, &NotLoadedError{edge: "manifest"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*StorageLocation) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -84,7 +100,7 @@ func (*StorageLocation) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case storagelocation.FieldPartCount, storagelocation.FieldSizeBytes, storagelocation.FieldLeaseVersion, storagelocation.FieldDeletionRequestedAt, storagelocation.FieldMergeStartedAt, storagelocation.FieldMergeLeaseExpiresAt, storagelocation.FieldMergedAt, storagelocation.FieldMaterializationUnsupportedAt, storagelocation.FieldPartsDeletedAt, storagelocation.FieldLastDownloadedAt, storagelocation.FieldRecencyAt:
 			values[i] = new(sql.NullInt64)
-		case storagelocation.FieldID, storagelocation.FieldFolderName, storagelocation.FieldMergeLeaseToken:
+		case storagelocation.FieldID, storagelocation.FieldFolderName, storagelocation.FieldMergeLeaseToken, storagelocation.FieldManifestAnchor:
 			values[i] = new(sql.NullString)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -194,6 +210,13 @@ func (_m *StorageLocation) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.RecencyAt = value.Int64
 			}
+		case storagelocation.FieldManifestAnchor:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field manifestAnchor", values[i])
+			} else if value.Valid {
+				_m.ManifestAnchor = new(string)
+				*_m.ManifestAnchor = value.String
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -215,6 +238,11 @@ func (_m *StorageLocation) QueryCacheEntries() *CacheEntryQuery {
 // QueryReaderLeases queries the "readerLeases" edge of the StorageLocation entity.
 func (_m *StorageLocation) QueryReaderLeases() *StorageReaderLeaseQuery {
 	return NewStorageLocationClient(_m.config).QueryReaderLeases(_m)
+}
+
+// QueryManifest queries the "manifest" edge of the StorageLocation entity.
+func (_m *StorageLocation) QueryManifest() *StorageManifestQuery {
+	return NewStorageLocationClient(_m.config).QueryManifest(_m)
 }
 
 // Update returns a builder for updating this StorageLocation.
@@ -296,6 +324,11 @@ func (_m *StorageLocation) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("recencyAt=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RecencyAt))
+	builder.WriteString(", ")
+	if v := _m.ManifestAnchor; v != nil {
+		builder.WriteString("manifestAnchor=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

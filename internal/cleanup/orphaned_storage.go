@@ -60,11 +60,7 @@ func (s *Service) RunOrphanedStorage(ctx context.Context) (int, error) {
 		s.logger.Debug().Msg("orphaned storage scan skipped: another replica started it this interval")
 		return 0, nil
 	}
-	gracePeriod := s.config.OrphanedStorageGracePeriod
-	if gracePeriod <= 0 {
-		gracePeriod = time.Duration(config.DefaultOrphanedStorageGraceHours) * time.Hour
-	}
-	cutoff := s.now().Add(-gracePeriod).UTC()
+	cutoff := s.now().Add(-s.orphanedStorageGracePeriod()).UTC()
 	queued := 0
 	reconcileErrors := &orphanErrorCollector{}
 	folderBatch := make([]string, 0, orphanFolderBatchSize)
@@ -104,6 +100,13 @@ func (s *Service) RunOrphanedStorage(ctx context.Context) (int, error) {
 		}
 	}
 	return queued, reconcileErrors.err()
+}
+
+func (s *Service) orphanedStorageGracePeriod() time.Duration {
+	if s.config.OrphanedStorageGracePeriod > 0 {
+		return s.config.OrphanedStorageGracePeriod
+	}
+	return time.Duration(config.DefaultOrphanedStorageGraceHours) * time.Hour
 }
 
 func (s *Service) processOrphanFolderBatch(

@@ -16,8 +16,10 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/joblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/uploadblock"
 )
 
 // ent aliases to avoid import conflicts in user's code.
@@ -82,8 +84,10 @@ func checkColumn(t, c string) error {
 			joblock.Table:            joblock.ValidColumn,
 			storagedeletion.Table:    storagedeletion.ValidColumn,
 			storagelocation.Table:    storagelocation.ValidColumn,
+			storagemanifest.Table:    storagemanifest.ValidColumn,
 			storagereaderlease.Table: storagereaderlease.ValidColumn,
 			upload.Table:             upload.ValidColumn,
+			uploadblock.Table:        uploadblock.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

@@ -38,10 +38,14 @@ const (
 	FieldLastDownloadedAt = "lastDownloadedAt"
 	// FieldRecencyAt holds the string denoting the recencyat field in the database.
 	FieldRecencyAt = "recencyAt"
+	// FieldManifestAnchor holds the string denoting the manifestanchor field in the database.
+	FieldManifestAnchor = "manifestAnchor"
 	// EdgeCacheEntries holds the string denoting the cacheentries edge name in mutations.
 	EdgeCacheEntries = "cacheEntries"
 	// EdgeReaderLeases holds the string denoting the readerleases edge name in mutations.
 	EdgeReaderLeases = "readerLeases"
+	// EdgeManifest holds the string denoting the manifest edge name in mutations.
+	EdgeManifest = "manifest"
 	// Table holds the table name of the storagelocation in the database.
 	Table = "storage_locations"
 	// CacheEntriesTable is the table that holds the cacheEntries relation/edge.
@@ -58,6 +62,13 @@ const (
 	ReaderLeasesInverseTable = "storage_reader_leases"
 	// ReaderLeasesColumn is the table column denoting the readerLeases relation/edge.
 	ReaderLeasesColumn = "storageLocationId"
+	// ManifestTable is the table that holds the manifest relation/edge.
+	ManifestTable = "storage_manifests"
+	// ManifestInverseTable is the table name for the StorageManifest entity.
+	// It exists in this package in order to avoid circular dependency with the "storagemanifest" package.
+	ManifestInverseTable = "storage_manifests"
+	// ManifestColumn is the table column denoting the manifest relation/edge.
+	ManifestColumn = "locationId"
 )
 
 // Columns holds all SQL columns for storagelocation fields.
@@ -76,6 +87,7 @@ var Columns = []string{
 	FieldPartsDeletedAt,
 	FieldLastDownloadedAt,
 	FieldRecencyAt,
+	FieldManifestAnchor,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -178,6 +190,11 @@ func ByRecencyAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRecencyAt, opts...).ToFunc()
 }
 
+// ByManifestAnchor orders the results by the manifestAnchor field.
+func ByManifestAnchor(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldManifestAnchor, opts...).ToFunc()
+}
+
 // ByCacheEntriesCount orders the results by cacheEntries count.
 func ByCacheEntriesCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -205,6 +222,13 @@ func ByReaderLeases(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newReaderLeasesStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByManifestField orders the results by manifest field.
+func ByManifestField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newManifestStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newCacheEntriesStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -217,5 +241,12 @@ func newReaderLeasesStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(ReaderLeasesInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, ReaderLeasesTable, ReaderLeasesColumn),
+	)
+}
+func newManifestStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ManifestInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, ManifestTable, ManifestColumn),
 	)
 }

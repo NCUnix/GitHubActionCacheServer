@@ -9,6 +9,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/uploadblock"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -245,4 +246,16 @@ func init() {
 	uploadDescTupleHash := uploadFields[11].Descriptor()
 	// upload.TupleHashValidator is a validator for the "tupleHash" field. It is called by the builders before save.
 	upload.TupleHashValidator = uploadDescTupleHash.Validators[0].(func(string) error)
+	// uploadDescBlockManifestVersion is the schema descriptor for blockManifestVersion field.
+	uploadDescBlockManifestVersion := uploadFields[12].Descriptor()
+	// upload.DefaultBlockManifestVersion holds the default value on creation for the blockManifestVersion field.
+	upload.DefaultBlockManifestVersion = uploadDescBlockManifestVersion.Default.(int64)
+	// upload.BlockManifestVersionValidator is a validator for the "blockManifestVersion" field. It is called by the builders before save.
+	upload.BlockManifestVersionValidator = uploadDescBlockManifestVersion.Validators[0].(func(int64) error)
+	uploadblockFields := schema.UploadBlock{}.Fields()
+	_ = uploadblockFields
+	// uploadblockDescSizeBytes is the schema descriptor for sizeBytes field.
+	uploadblockDescSizeBytes := uploadblockFields[3].Descriptor()
+	// uploadblock.SizeBytesValidator is a validator for the "sizeBytes" field. It is called by the builders before save.
+	uploadblock.SizeBytesValidator = uploadblockDescSizeBytes.Validators[0].(func(int64) error)
 }

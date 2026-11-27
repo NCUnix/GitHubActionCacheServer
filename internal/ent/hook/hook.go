@@ -57,6 +57,18 @@ func (f StorageLocationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Va
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.StorageLocationMutation", m)
 }
 
+// The StorageManifestFunc type is an adapter to allow the use of ordinary
+// function as StorageManifest mutator.
+type StorageManifestFunc func(context.Context, *ent.StorageManifestMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f StorageManifestFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.StorageManifestMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.StorageManifestMutation", m)
+}
+
 // The StorageReaderLeaseFunc type is an adapter to allow the use of ordinary
 // function as StorageReaderLease mutator.
 type StorageReaderLeaseFunc func(context.Context, *ent.StorageReaderLeaseMutation) (ent.Value, error)
@@ -79,6 +91,18 @@ func (f UploadFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, erro
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UploadMutation", m)
+}
+
+// The UploadBlockFunc type is an adapter to allow the use of ordinary
+// function as UploadBlock mutator.
+type UploadBlockFunc func(context.Context, *ent.UploadBlockMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UploadBlockFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UploadBlockMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UploadBlockMutation", m)
 }
 
 // Condition is a hook condition function.

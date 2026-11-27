@@ -7,13 +7,17 @@ import (
 	"math"
 	"sort"
 	"sync"
+
+	"github.com/NCUnix/GitHubActionCacheServer/internal/blockmanifest"
+	"github.com/google/uuid"
 )
 
 const partIndexEntryOverhead = int64(64)
 
 type partIndex struct {
-	ends  []int64
-	total int64
+	ends       []int64
+	total      int64
+	candidates []uuid.UUID
 }
 
 func newPartIndex(sizes []int64) (*partIndex, error) {
@@ -46,6 +50,13 @@ func (i *partIndex) size(part int) int64 {
 		start = i.ends[part-1]
 	}
 	return i.ends[part] - start
+}
+
+func (i *partIndex) objectName(folder string, position int) string {
+	if i != nil && i.candidates != nil {
+		return blockmanifest.Object(folder, i.candidates[position].String())
+	}
+	return partObjectName(folder, position)
 }
 
 type partIndexKey struct {
@@ -138,7 +149,7 @@ func (c *partIndexCache) addLocked(key partIndexKey, index *partIndex) {
 		c.lru.MoveToFront(element)
 		return
 	}
-	weight := partIndexEntryOverhead + int64(len(key.locationID)+len(key.folderName)) + int64(len(index.ends))*8
+	weight := partIndexEntryOverhead + int64(len(key.locationID)+len(key.folderName)) + int64(len(index.ends))*8 + int64(len(index.candidates))*16
 	if weight > c.capacity {
 		return
 	}

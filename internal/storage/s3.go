@@ -552,6 +552,34 @@ func (a *S3Adapter) DeleteFolder(ctx context.Context, folderName string) error {
 	return a.deleteByPrefix(ctx, a.key(folderName)+"/")
 }
 
+func (a *S3Adapter) PruneFolderObjects(ctx context.Context, folderName string, remove func(ObjectMetadata) bool) (int, bool, error) {
+	prefix := a.key(folderName) + "/"
+	objectKeys := make([]string, 0, s3DeleteBatchSize)
+	batchFull := errors.New("s3 prune batch full")
+	err := a.walkObjects(ctx, prefix, "", func(object ObjectMetadata) error {
+		key := object.Name
+		object.Name = strings.TrimPrefix(key, prefix)
+		if !remove(object) {
+			return nil
+		}
+		if len(objectKeys) == s3DeleteBatchSize {
+			return batchFull
+		}
+		objectKeys = append(objectKeys, key)
+		return nil
+	})
+	if err != nil && !errors.Is(err, batchFull) {
+		return 0, false, err
+	}
+	if len(objectKeys) == 0 {
+		return 0, false, nil
+	}
+	if deleteErr := a.deleteObjects(ctx, objectKeys); deleteErr != nil {
+		return 0, false, deleteErr
+	}
+	return len(objectKeys), errors.Is(err, batchFull), nil
+}
+
 func (a *S3Adapter) CountFilesInFolder(ctx context.Context, folderName string) (int, error) {
 	prefix := a.key(folderName) + "/"
 	count := 0
@@ -636,30 +664,33 @@ func (a *S3Adapter) deleteByPrefixWithPageLimit(ctx context.Context, prefix stri
 			noProgressCount = 0
 		}
 
-		objects := make([]types.ObjectIdentifier, 0, len(objectKeys))
-		for _, key := range objectKeys {
-			objects = append(objects, types.ObjectIdentifier{Key: aws.String(key)})
-		}
-		output, err := a.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-			Bucket: aws.String(a.bucket),
-			Delete: &types.Delete{
-				Objects: objects,
-				Quiet:   aws.Bool(true),
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("delete s3 objects: %w", err)
-		}
-		if output == nil {
-			return fmt.Errorf("delete s3 objects: empty response")
-		}
-		if err := s3DeleteErrorsError(output.Errors); err != nil {
+		if err := a.deleteObjects(ctx, objectKeys); err != nil {
 			return err
 		}
 	}
 	return fmt.Errorf("delete s3 objects: reached work limit after %d pages; retry required", maxPages)
 }
 
+func (a *S3Adapter) deleteObjects(ctx context.Context, objectKeys []string) error {
+	objects := make([]types.ObjectIdentifier, 0, len(objectKeys))
+	for _, key := range objectKeys {
+		objects = append(objects, types.ObjectIdentifier{Key: aws.String(key)})
+	}
+	output, err := a.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		Bucket: aws.String(a.bucket),
+		Delete: &types.Delete{
+			Objects: objects,
+			Quiet:   aws.Bool(true),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("delete s3 objects: %w", err)
+	}
+	if output == nil {
+		return fmt.Errorf("delete s3 objects: empty response")
+	}
+	return s3DeleteErrorsError(output.Errors)
+}
 func s3KeyPageFingerprint(objectKeys []string) [sha256.Size]byte {
 	sortedKeys := append([]string(nil), objectKeys...)
 	sort.Strings(sortedKeys)

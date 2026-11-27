@@ -100,6 +100,10 @@ type ComposeAdapter interface {
 	ComposeObjects(ctx context.Context, destinationObjectName string, sourceObjectNames []string) error
 }
 
+type FolderPruner interface {
+	PruneFolderObjects(ctx context.Context, folderName string, remove func(ObjectMetadata) bool) (deleted int, more bool, err error)
+}
+
 type FilesystemUsage struct {
 	CapacityBytes int64
 	UsedBytes     int64

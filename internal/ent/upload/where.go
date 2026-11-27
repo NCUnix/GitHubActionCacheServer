@@ -4,6 +4,7 @@ package upload
 
 import (
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 )
 
@@ -105,6 +106,11 @@ func CommittedPartCount(v int) predicate.Upload {
 // TupleHash applies equality check predicate on the "tupleHash" field. It's identical to TupleHashEQ.
 func TupleHash(v string) predicate.Upload {
 	return predicate.Upload(sql.FieldEQ(FieldTupleHash, v))
+}
+
+// BlockManifestVersion applies equality check predicate on the "blockManifestVersion" field. It's identical to BlockManifestVersionEQ.
+func BlockManifestVersion(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldEQ(FieldBlockManifestVersion, v))
 }
 
 // KeyEQ applies the EQ predicate on the "key" field.
@@ -725,6 +731,92 @@ func TupleHashEqualFold(v string) predicate.Upload {
 // TupleHashContainsFold applies the ContainsFold predicate on the "tupleHash" field.
 func TupleHashContainsFold(v string) predicate.Upload {
 	return predicate.Upload(sql.FieldContainsFold(FieldTupleHash, v))
+}
+
+// BlockManifestVersionEQ applies the EQ predicate on the "blockManifestVersion" field.
+func BlockManifestVersionEQ(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldEQ(FieldBlockManifestVersion, v))
+}
+
+// BlockManifestVersionNEQ applies the NEQ predicate on the "blockManifestVersion" field.
+func BlockManifestVersionNEQ(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldNEQ(FieldBlockManifestVersion, v))
+}
+
+// BlockManifestVersionIn applies the In predicate on the "blockManifestVersion" field.
+func BlockManifestVersionIn(vs ...int64) predicate.Upload {
+	return predicate.Upload(sql.FieldIn(FieldBlockManifestVersion, vs...))
+}
+
+// BlockManifestVersionNotIn applies the NotIn predicate on the "blockManifestVersion" field.
+func BlockManifestVersionNotIn(vs ...int64) predicate.Upload {
+	return predicate.Upload(sql.FieldNotIn(FieldBlockManifestVersion, vs...))
+}
+
+// BlockManifestVersionGT applies the GT predicate on the "blockManifestVersion" field.
+func BlockManifestVersionGT(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldGT(FieldBlockManifestVersion, v))
+}
+
+// BlockManifestVersionGTE applies the GTE predicate on the "blockManifestVersion" field.
+func BlockManifestVersionGTE(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldGTE(FieldBlockManifestVersion, v))
+}
+
+// BlockManifestVersionLT applies the LT predicate on the "blockManifestVersion" field.
+func BlockManifestVersionLT(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldLT(FieldBlockManifestVersion, v))
+}
+
+// BlockManifestVersionLTE applies the LTE predicate on the "blockManifestVersion" field.
+func BlockManifestVersionLTE(v int64) predicate.Upload {
+	return predicate.Upload(sql.FieldLTE(FieldBlockManifestVersion, v))
+}
+
+// HasBlocks applies the HasEdge predicate on the "blocks" edge.
+func HasBlocks() predicate.Upload {
+	return predicate.Upload(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, BlocksTable, BlocksColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBlocksWith applies the HasEdge predicate on the "blocks" edge with a given conditions (other predicates).
+func HasBlocksWith(preds ...predicate.UploadBlock) predicate.Upload {
+	return predicate.Upload(func(s *sql.Selector) {
+		step := newBlocksStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasManifest applies the HasEdge predicate on the "manifest" edge.
+func HasManifest() predicate.Upload {
+	return predicate.Upload(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, ManifestTable, ManifestColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasManifestWith applies the HasEdge predicate on the "manifest" edge with a given conditions (other predicates).
+func HasManifestWith(preds ...predicate.StorageManifest) predicate.Upload {
+	return predicate.Upload(func(s *sql.Selector) {
+		step := newManifestStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
 }
 
 // And groups predicates with the AND operator between them.

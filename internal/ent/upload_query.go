@@ -4,6 +4,7 @@ package ent
 
 import (
 	"context"
+	"database/sql/driver"
 	"fmt"
 	"math"
 
@@ -13,17 +14,21 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/uploadblock"
 )
 
 // UploadQuery is the builder for querying Upload entities.
 type UploadQuery struct {
 	config
-	ctx        *QueryContext
-	order      []upload.OrderOption
-	inters     []Interceptor
-	predicates []predicate.Upload
-	modifiers  []func(*sql.Selector)
+	ctx          *QueryContext
+	order        []upload.OrderOption
+	inters       []Interceptor
+	predicates   []predicate.Upload
+	withBlocks   *UploadBlockQuery
+	withManifest *StorageManifestQuery
+	modifiers    []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -58,6 +63,50 @@ func (_q *UploadQuery) Unique(unique bool) *UploadQuery {
 func (_q *UploadQuery) Order(o ...upload.OrderOption) *UploadQuery {
 	_q.order = append(_q.order, o...)
 	return _q
+}
+
+// QueryBlocks chains the current query on the "blocks" edge.
+func (_q *UploadQuery) QueryBlocks() *UploadBlockQuery {
+	query := (&UploadBlockClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(upload.Table, upload.FieldID, selector),
+			sqlgraph.To(uploadblock.Table, uploadblock.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, upload.BlocksTable, upload.BlocksColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryManifest chains the current query on the "manifest" edge.
+func (_q *UploadQuery) QueryManifest() *StorageManifestQuery {
+	query := (&StorageManifestClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(upload.Table, upload.FieldID, selector),
+			sqlgraph.To(storagemanifest.Table, storagemanifest.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, upload.ManifestTable, upload.ManifestColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
 }
 
 // First returns the first Upload entity from the query.
@@ -247,15 +296,39 @@ func (_q *UploadQuery) Clone() *UploadQuery {
 		return nil
 	}
 	return &UploadQuery{
-		config:     _q.config,
-		ctx:        _q.ctx.Clone(),
-		order:      append([]upload.OrderOption{}, _q.order...),
-		inters:     append([]Interceptor{}, _q.inters...),
-		predicates: append([]predicate.Upload{}, _q.predicates...),
+		config:       _q.config,
+		ctx:          _q.ctx.Clone(),
+		order:        append([]upload.OrderOption{}, _q.order...),
+		inters:       append([]Interceptor{}, _q.inters...),
+		predicates:   append([]predicate.Upload{}, _q.predicates...),
+		withBlocks:   _q.withBlocks.Clone(),
+		withManifest: _q.withManifest.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
 	}
+}
+
+// WithBlocks tells the query-builder to eager-load the nodes that are connected to
+// the "blocks" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UploadQuery) WithBlocks(opts ...func(*UploadBlockQuery)) *UploadQuery {
+	query := (&UploadBlockClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withBlocks = query
+	return _q
+}
+
+// WithManifest tells the query-builder to eager-load the nodes that are connected to
+// the "manifest" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UploadQuery) WithManifest(opts ...func(*StorageManifestQuery)) *UploadQuery {
+	query := (&StorageManifestClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withManifest = query
+	return _q
 }
 
 // GroupBy is used to group vertices by one or more fields/columns.
@@ -334,8 +407,12 @@ func (_q *UploadQuery) prepareQuery(ctx context.Context) error {
 
 func (_q *UploadQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Upload, error) {
 	var (
-		nodes = []*Upload{}
-		_spec = _q.querySpec()
+		nodes       = []*Upload{}
+		_spec       = _q.querySpec()
+		loadedTypes = [2]bool{
+			_q.withBlocks != nil,
+			_q.withManifest != nil,
+		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
 		return (*Upload).scanValues(nil, columns)
@@ -343,6 +420,7 @@ func (_q *UploadQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Uploa
 	_spec.Assign = func(columns []string, values []any) error {
 		node := &Upload{config: _q.config}
 		nodes = append(nodes, node)
+		node.Edges.loadedTypes = loadedTypes
 		return node.assignValues(columns, values)
 	}
 	if len(_q.modifiers) > 0 {
@@ -357,7 +435,81 @@ func (_q *UploadQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*Uploa
 	if len(nodes) == 0 {
 		return nodes, nil
 	}
+	if query := _q.withBlocks; query != nil {
+		if err := _q.loadBlocks(ctx, query, nodes,
+			func(n *Upload) { n.Edges.Blocks = []*UploadBlock{} },
+			func(n *Upload, e *UploadBlock) { n.Edges.Blocks = append(n.Edges.Blocks, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withManifest; query != nil {
+		if err := _q.loadManifest(ctx, query, nodes, nil,
+			func(n *Upload, e *StorageManifest) { n.Edges.Manifest = e }); err != nil {
+			return nil, err
+		}
+	}
 	return nodes, nil
+}
+
+func (_q *UploadQuery) loadBlocks(ctx context.Context, query *UploadBlockQuery, nodes []*Upload, init func(*Upload), assign func(*Upload, *UploadBlock)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Upload)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(uploadblock.FieldUploadId)
+	}
+	query.Where(predicate.UploadBlock(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(upload.BlocksColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UploadId
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "uploadId" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UploadQuery) loadManifest(ctx context.Context, query *StorageManifestQuery, nodes []*Upload, init func(*Upload), assign func(*Upload, *StorageManifest)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*Upload)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(storagemanifest.FieldUploadId)
+	}
+	query.Where(predicate.StorageManifest(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(upload.ManifestColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UploadId
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "uploadId" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "uploadId" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
 }
 
 func (_q *UploadQuery) sqlCount(ctx context.Context) (int, error) {

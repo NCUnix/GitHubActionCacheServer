@@ -48,6 +48,7 @@ func (r *Runner) Run(ctx context.Context) {
 	}{
 		{name: "cleanup:uploads", interval: uploadsInterval, run: r.service.RunUploads},
 		{name: "cleanup:storage-deletions", interval: storageDeletionsInterval, run: r.service.RunStorageDeletions},
+		{name: "cleanup:manifest-candidates", interval: storageDeletionsInterval, run: r.service.RunManifestCandidates},
 		{name: "cleanup:pending-storage-locations", interval: pendingLocationsInterval, run: r.service.RunPendingStorageLocations},
 		{name: "cleanup:reader-leases", interval: readerLeasesInterval, run: r.service.RunReaderLeases},
 		{name: "cleanup:cache-entries", interval: cacheEntriesInterval, run: r.service.RunCacheEntries},

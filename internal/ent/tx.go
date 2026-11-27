@@ -22,10 +22,14 @@ type Tx struct {
 	StorageDeletion *StorageDeletionClient
 	// StorageLocation is the client for interacting with the StorageLocation builders.
 	StorageLocation *StorageLocationClient
+	// StorageManifest is the client for interacting with the StorageManifest builders.
+	StorageManifest *StorageManifestClient
 	// StorageReaderLease is the client for interacting with the StorageReaderLease builders.
 	StorageReaderLease *StorageReaderLeaseClient
 	// Upload is the client for interacting with the Upload builders.
 	Upload *UploadClient
+	// UploadBlock is the client for interacting with the UploadBlock builders.
+	UploadBlock *UploadBlockClient
 
 	// lazily loaded.
 	client     *Client
@@ -161,8 +165,10 @@ func (tx *Tx) init() {
 	tx.JobLock = NewJobLockClient(tx.config)
 	tx.StorageDeletion = NewStorageDeletionClient(tx.config)
 	tx.StorageLocation = NewStorageLocationClient(tx.config)
+	tx.StorageManifest = NewStorageManifestClient(tx.config)
 	tx.StorageReaderLease = NewStorageReaderLeaseClient(tx.config)
 	tx.Upload = NewUploadClient(tx.config)
+	tx.UploadBlock = NewUploadBlockClient(tx.config)
 }
 
 // txDriver wraps the given dialect.Tx with a nop dialect.Driver implementation.

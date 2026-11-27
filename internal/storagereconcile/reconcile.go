@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/NCUnix/GitHubActionCacheServer/internal/blockmanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
@@ -292,6 +293,9 @@ func resolveLocationSize(ctx context.Context, options Options, location *ent.Sto
 	if location.PartsDeletedAt != nil {
 		return sizeResolution{dangling: true}, nil
 	}
+	if location.ManifestAnchor != nil {
+		return resolveManifestSize(ctx, options, location)
+	}
 
 	for range maxLocationRechecks {
 		size, sizeErr := options.Storage.InspectIndexedFolder(ctx, storage.PartsFolder(location.FolderName), location.PartCount)
@@ -327,6 +331,34 @@ func resolveLocationSize(ctx context.Context, options Options, location *ent.Sto
 	return sizeResolution{}, fmt.Errorf("measure active parts: listing disagreed with point inspection after %d attempts", maxLocationRechecks)
 }
 
+func resolveManifestSize(ctx context.Context, options Options, location *ent.StorageLocation) (sizeResolution, error) {
+	parts, total, err := blockmanifest.ForLocation(ctx, options.DB, location)
+	if err != nil {
+		return sizeResolution{}, err
+	}
+	checked := make(map[string]struct{}, len(parts))
+	for _, part := range parts {
+		object := blockmanifest.Object(location.FolderName, part.Candidate.String())
+		if _, exists := checked[object]; exists {
+			continue
+		}
+		metadata, err := options.Storage.InspectObject(ctx, object)
+		if errors.Is(err, storage.ErrObjectNotFound) {
+			if options.Lifecycle.MaterializationActive(location) {
+				return sizeResolution{deferred: true}, nil
+			}
+			return sizeResolution{dangling: true}, nil
+		}
+		if err != nil {
+			return sizeResolution{}, fmt.Errorf("inspect manifest part: %w", err)
+		}
+		if metadata.SizeBytes != part.Size {
+			return sizeResolution{}, fmt.Errorf("manifest part %q has size %d, expected %d", object, metadata.SizeBytes, part.Size)
+		}
+		checked[object] = struct{}{}
+	}
+	return sizeResolution{sizeBytes: &total}, nil
+}
 func purgeDanglingLocation(ctx context.Context, options Options, location *ent.StorageLocation) (bool, error) {
 	entry, err := options.DB.CacheEntry.Query().
 		Where(cacheentry.LocationId(location.ID)).

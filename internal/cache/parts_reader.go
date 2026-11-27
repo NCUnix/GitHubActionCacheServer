@@ -14,6 +14,7 @@ type partsReadCloser struct {
 	storage   storage.Adapter
 	folder    string
 	partCount int
+	parts     *partIndex
 
 	mu      sync.Mutex
 	index   int
@@ -21,12 +22,13 @@ type partsReadCloser struct {
 	closed  bool
 }
 
-func newPartsReadCloser(ctx context.Context, storage storage.Adapter, folder string, partCount int) *partsReadCloser {
+func newPartsReadCloser(ctx context.Context, storage storage.Adapter, folder string, partCount int, parts *partIndex) *partsReadCloser {
 	return &partsReadCloser{
 		ctx:       ctx,
 		storage:   storage,
 		folder:    folder,
 		partCount: partCount,
+		parts:     parts,
 	}
 }
 
@@ -87,7 +89,7 @@ func (r *partsReadCloser) currentStream() (io.ReadCloser, error) {
 	partIndex := r.index
 	r.mu.Unlock()
 
-	stream, err := r.storage.CreateDownloadStream(r.ctx, partObjectName(r.folder, partIndex))
+	stream, err := r.storage.CreateDownloadStream(r.ctx, r.parts.objectName(r.folder, partIndex))
 	if err != nil {
 		if errors.Is(err, storage.ErrObjectNotFound) {
 			return nil, ErrCacheNotFound

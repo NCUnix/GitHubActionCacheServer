@@ -128,6 +128,11 @@ func RecencyAt(v int64) predicate.StorageLocation {
 	return predicate.StorageLocation(sql.FieldEQ(FieldRecencyAt, v))
 }
 
+// ManifestAnchor applies equality check predicate on the "manifestAnchor" field. It's identical to ManifestAnchorEQ.
+func ManifestAnchor(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldEQ(FieldManifestAnchor, v))
+}
+
 // FolderNameEQ applies the EQ predicate on the "folderName" field.
 func FolderNameEQ(v string) predicate.StorageLocation {
 	return predicate.StorageLocation(sql.FieldEQ(FieldFolderName, v))
@@ -788,6 +793,81 @@ func RecencyAtLTE(v int64) predicate.StorageLocation {
 	return predicate.StorageLocation(sql.FieldLTE(FieldRecencyAt, v))
 }
 
+// ManifestAnchorEQ applies the EQ predicate on the "manifestAnchor" field.
+func ManifestAnchorEQ(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldEQ(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorNEQ applies the NEQ predicate on the "manifestAnchor" field.
+func ManifestAnchorNEQ(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldNEQ(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorIn applies the In predicate on the "manifestAnchor" field.
+func ManifestAnchorIn(vs ...string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldIn(FieldManifestAnchor, vs...))
+}
+
+// ManifestAnchorNotIn applies the NotIn predicate on the "manifestAnchor" field.
+func ManifestAnchorNotIn(vs ...string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldNotIn(FieldManifestAnchor, vs...))
+}
+
+// ManifestAnchorGT applies the GT predicate on the "manifestAnchor" field.
+func ManifestAnchorGT(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldGT(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorGTE applies the GTE predicate on the "manifestAnchor" field.
+func ManifestAnchorGTE(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldGTE(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorLT applies the LT predicate on the "manifestAnchor" field.
+func ManifestAnchorLT(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldLT(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorLTE applies the LTE predicate on the "manifestAnchor" field.
+func ManifestAnchorLTE(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldLTE(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorContains applies the Contains predicate on the "manifestAnchor" field.
+func ManifestAnchorContains(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldContains(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorHasPrefix applies the HasPrefix predicate on the "manifestAnchor" field.
+func ManifestAnchorHasPrefix(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldHasPrefix(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorHasSuffix applies the HasSuffix predicate on the "manifestAnchor" field.
+func ManifestAnchorHasSuffix(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldHasSuffix(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorIsNil applies the IsNil predicate on the "manifestAnchor" field.
+func ManifestAnchorIsNil() predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldIsNull(FieldManifestAnchor))
+}
+
+// ManifestAnchorNotNil applies the NotNil predicate on the "manifestAnchor" field.
+func ManifestAnchorNotNil() predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldNotNull(FieldManifestAnchor))
+}
+
+// ManifestAnchorEqualFold applies the EqualFold predicate on the "manifestAnchor" field.
+func ManifestAnchorEqualFold(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldEqualFold(FieldManifestAnchor, v))
+}
+
+// ManifestAnchorContainsFold applies the ContainsFold predicate on the "manifestAnchor" field.
+func ManifestAnchorContainsFold(v string) predicate.StorageLocation {
+	return predicate.StorageLocation(sql.FieldContainsFold(FieldManifestAnchor, v))
+}
+
 // HasCacheEntries applies the HasEdge predicate on the "cacheEntries" edge.
 func HasCacheEntries() predicate.StorageLocation {
 	return predicate.StorageLocation(func(s *sql.Selector) {
@@ -826,6 +906,29 @@ func HasReaderLeases() predicate.StorageLocation {
 func HasReaderLeasesWith(preds ...predicate.StorageReaderLease) predicate.StorageLocation {
 	return predicate.StorageLocation(func(s *sql.Selector) {
 		step := newReaderLeasesStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasManifest applies the HasEdge predicate on the "manifest" edge.
+func HasManifest() predicate.StorageLocation {
+	return predicate.StorageLocation(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, ManifestTable, ManifestColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasManifestWith applies the HasEdge predicate on the "manifest" edge with a given conditions (other predicates).
+func HasManifestWith(preds ...predicate.StorageManifest) predicate.StorageLocation {
+	return predicate.StorageLocation(func(s *sql.Selector) {
+		step := newManifestStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

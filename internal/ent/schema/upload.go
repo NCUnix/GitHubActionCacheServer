@@ -4,6 +4,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -53,6 +54,14 @@ func (Upload) Fields() []ent.Field {
 			Nillable().
 			StorageKey("tupleHash").
 			SchemaType(originalBoundedStringColumnType(64)),
+		field.Int64("blockManifestVersion").Default(0).NonNegative().StorageKey("blockManifestVersion"),
+	}
+}
+
+func (Upload) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("blocks", UploadBlock.Type).Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("manifest", StorageManifest.Type).Unique().Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 

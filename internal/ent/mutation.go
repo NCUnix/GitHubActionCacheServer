@@ -15,8 +15,10 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/uploadblock"
 )
 
 const (
@@ -32,8 +34,10 @@ const (
 	TypeJobLock            = "JobLock"
 	TypeStorageDeletion    = "StorageDeletion"
 	TypeStorageLocation    = "StorageLocation"
+	TypeStorageManifest    = "StorageManifest"
 	TypeStorageReaderLease = "StorageReaderLease"
 	TypeUpload             = "Upload"
+	TypeUploadBlock        = "UploadBlock"
 )
 
 // CacheEntryMutation represents an operation that mutates the CacheEntry nodes in the graph.
@@ -1854,6 +1858,7 @@ type StorageLocationMutation struct {
 	addlastDownloadedAt             *int64
 	recencyAt                       *int64
 	addrecencyAt                    *int64
+	manifestAnchor                  *string
 	clearedFields                   map[string]struct{}
 	cacheEntries                    map[string]struct{}
 	removedcacheEntries             map[string]struct{}
@@ -1861,6 +1866,8 @@ type StorageLocationMutation struct {
 	readerLeases                    map[string]struct{}
 	removedreaderLeases             map[string]struct{}
 	clearedreaderLeases             bool
+	manifest                        *int
+	clearedmanifest                 bool
 	done                            bool
 	oldValue                        func(context.Context) (*StorageLocation, error)
 	predicates                      []predicate.StorageLocation
@@ -2783,6 +2790,55 @@ func (m *StorageLocationMutation) ResetRecencyAt() {
 	m.addrecencyAt = nil
 }
 
+// SetManifestAnchor sets the "manifestAnchor" field.
+func (m *StorageLocationMutation) SetManifestAnchor(s string) {
+	m.manifestAnchor = &s
+}
+
+// ManifestAnchor returns the value of the "manifestAnchor" field in the mutation.
+func (m *StorageLocationMutation) ManifestAnchor() (r string, exists bool) {
+	v := m.manifestAnchor
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldManifestAnchor returns the old "manifestAnchor" field's value of the StorageLocation entity.
+// If the StorageLocation object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StorageLocationMutation) OldManifestAnchor(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldManifestAnchor is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldManifestAnchor requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldManifestAnchor: %w", err)
+	}
+	return oldValue.ManifestAnchor, nil
+}
+
+// ClearManifestAnchor clears the value of the "manifestAnchor" field.
+func (m *StorageLocationMutation) ClearManifestAnchor() {
+	m.manifestAnchor = nil
+	m.clearedFields[storagelocation.FieldManifestAnchor] = struct{}{}
+}
+
+// ManifestAnchorCleared returns if the "manifestAnchor" field was cleared in this mutation.
+func (m *StorageLocationMutation) ManifestAnchorCleared() bool {
+	_, ok := m.clearedFields[storagelocation.FieldManifestAnchor]
+	return ok
+}
+
+// ResetManifestAnchor resets all changes to the "manifestAnchor" field.
+func (m *StorageLocationMutation) ResetManifestAnchor() {
+	m.manifestAnchor = nil
+	delete(m.clearedFields, storagelocation.FieldManifestAnchor)
+}
+
 // AddCacheEntryIDs adds the "cacheEntries" edge to the CacheEntry entity by ids.
 func (m *StorageLocationMutation) AddCacheEntryIDs(ids ...string) {
 	if m.cacheEntries == nil {
@@ -2891,6 +2947,45 @@ func (m *StorageLocationMutation) ResetReaderLeases() {
 	m.removedreaderLeases = nil
 }
 
+// SetManifestID sets the "manifest" edge to the StorageManifest entity by id.
+func (m *StorageLocationMutation) SetManifestID(id int) {
+	m.manifest = &id
+}
+
+// ClearManifest clears the "manifest" edge to the StorageManifest entity.
+func (m *StorageLocationMutation) ClearManifest() {
+	m.clearedmanifest = true
+}
+
+// ManifestCleared reports if the "manifest" edge to the StorageManifest entity was cleared.
+func (m *StorageLocationMutation) ManifestCleared() bool {
+	return m.clearedmanifest
+}
+
+// ManifestID returns the "manifest" edge ID in the mutation.
+func (m *StorageLocationMutation) ManifestID() (id int, exists bool) {
+	if m.manifest != nil {
+		return *m.manifest, true
+	}
+	return
+}
+
+// ManifestIDs returns the "manifest" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ManifestID instead. It exists only for internal usage by the builders.
+func (m *StorageLocationMutation) ManifestIDs() (ids []int) {
+	if id := m.manifest; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetManifest resets all changes to the "manifest" edge.
+func (m *StorageLocationMutation) ResetManifest() {
+	m.manifest = nil
+	m.clearedmanifest = false
+}
+
 // Where appends a list predicates to the StorageLocationMutation builder.
 func (m *StorageLocationMutation) Where(ps ...predicate.StorageLocation) {
 	m.predicates = append(m.predicates, ps...)
@@ -2925,7 +3020,7 @@ func (m *StorageLocationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *StorageLocationMutation) Fields() []string {
-	fields := make([]string, 0, 13)
+	fields := make([]string, 0, 14)
 	if m.folderName != nil {
 		fields = append(fields, storagelocation.FieldFolderName)
 	}
@@ -2965,6 +3060,9 @@ func (m *StorageLocationMutation) Fields() []string {
 	if m.recencyAt != nil {
 		fields = append(fields, storagelocation.FieldRecencyAt)
 	}
+	if m.manifestAnchor != nil {
+		fields = append(fields, storagelocation.FieldManifestAnchor)
+	}
 	return fields
 }
 
@@ -2999,6 +3097,8 @@ func (m *StorageLocationMutation) Field(name string) (ent.Value, bool) {
 		return m.LastDownloadedAt()
 	case storagelocation.FieldRecencyAt:
 		return m.RecencyAt()
+	case storagelocation.FieldManifestAnchor:
+		return m.ManifestAnchor()
 	}
 	return nil, false
 }
@@ -3034,6 +3134,8 @@ func (m *StorageLocationMutation) OldField(ctx context.Context, name string) (en
 		return m.OldLastDownloadedAt(ctx)
 	case storagelocation.FieldRecencyAt:
 		return m.OldRecencyAt(ctx)
+	case storagelocation.FieldManifestAnchor:
+		return m.OldManifestAnchor(ctx)
 	}
 	return nil, fmt.Errorf("unknown StorageLocation field %s", name)
 }
@@ -3133,6 +3235,13 @@ func (m *StorageLocationMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetRecencyAt(v)
+		return nil
+	case storagelocation.FieldManifestAnchor:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetManifestAnchor(v)
 		return nil
 	}
 	return fmt.Errorf("unknown StorageLocation field %s", name)
@@ -3326,6 +3435,9 @@ func (m *StorageLocationMutation) ClearedFields() []string {
 	if m.FieldCleared(storagelocation.FieldLastDownloadedAt) {
 		fields = append(fields, storagelocation.FieldLastDownloadedAt)
 	}
+	if m.FieldCleared(storagelocation.FieldManifestAnchor) {
+		fields = append(fields, storagelocation.FieldManifestAnchor)
+	}
 	return fields
 }
 
@@ -3366,6 +3478,9 @@ func (m *StorageLocationMutation) ClearField(name string) error {
 		return nil
 	case storagelocation.FieldLastDownloadedAt:
 		m.ClearLastDownloadedAt()
+		return nil
+	case storagelocation.FieldManifestAnchor:
+		m.ClearManifestAnchor()
 		return nil
 	}
 	return fmt.Errorf("unknown StorageLocation nullable field %s", name)
@@ -3414,18 +3529,24 @@ func (m *StorageLocationMutation) ResetField(name string) error {
 	case storagelocation.FieldRecencyAt:
 		m.ResetRecencyAt()
 		return nil
+	case storagelocation.FieldManifestAnchor:
+		m.ResetManifestAnchor()
+		return nil
 	}
 	return fmt.Errorf("unknown StorageLocation field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *StorageLocationMutation) AddedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.cacheEntries != nil {
 		edges = append(edges, storagelocation.EdgeCacheEntries)
 	}
 	if m.readerLeases != nil {
 		edges = append(edges, storagelocation.EdgeReaderLeases)
+	}
+	if m.manifest != nil {
+		edges = append(edges, storagelocation.EdgeManifest)
 	}
 	return edges
 }
@@ -3446,13 +3567,17 @@ func (m *StorageLocationMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case storagelocation.EdgeManifest:
+		if id := m.manifest; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *StorageLocationMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.removedcacheEntries != nil {
 		edges = append(edges, storagelocation.EdgeCacheEntries)
 	}
@@ -3484,12 +3609,15 @@ func (m *StorageLocationMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *StorageLocationMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 2)
+	edges := make([]string, 0, 3)
 	if m.clearedcacheEntries {
 		edges = append(edges, storagelocation.EdgeCacheEntries)
 	}
 	if m.clearedreaderLeases {
 		edges = append(edges, storagelocation.EdgeReaderLeases)
+	}
+	if m.clearedmanifest {
+		edges = append(edges, storagelocation.EdgeManifest)
 	}
 	return edges
 }
@@ -3502,6 +3630,8 @@ func (m *StorageLocationMutation) EdgeCleared(name string) bool {
 		return m.clearedcacheEntries
 	case storagelocation.EdgeReaderLeases:
 		return m.clearedreaderLeases
+	case storagelocation.EdgeManifest:
+		return m.clearedmanifest
 	}
 	return false
 }
@@ -3510,6 +3640,9 @@ func (m *StorageLocationMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *StorageLocationMutation) ClearEdge(name string) error {
 	switch name {
+	case storagelocation.EdgeManifest:
+		m.ClearManifest()
+		return nil
 	}
 	return fmt.Errorf("unknown StorageLocation unique edge %s", name)
 }
@@ -3524,8 +3657,722 @@ func (m *StorageLocationMutation) ResetEdge(name string) error {
 	case storagelocation.EdgeReaderLeases:
 		m.ResetReaderLeases()
 		return nil
+	case storagelocation.EdgeManifest:
+		m.ResetManifest()
+		return nil
 	}
 	return fmt.Errorf("unknown StorageLocation edge %s", name)
+}
+
+// StorageManifestMutation represents an operation that mutates the StorageManifest nodes in the graph.
+type StorageManifestMutation struct {
+	config
+	op               Op
+	typ              string
+	id               *int
+	parts            *[]byte
+	candidateGCAt    *int64
+	addcandidateGCAt *int64
+	clearedFields    map[string]struct{}
+	upload           *int64
+	clearedupload    bool
+	location         *string
+	clearedlocation  bool
+	done             bool
+	oldValue         func(context.Context) (*StorageManifest, error)
+	predicates       []predicate.StorageManifest
+}
+
+var _ ent.Mutation = (*StorageManifestMutation)(nil)
+
+// storagemanifestOption allows management of the mutation configuration using functional options.
+type storagemanifestOption func(*StorageManifestMutation)
+
+// newStorageManifestMutation creates new mutation for the StorageManifest entity.
+func newStorageManifestMutation(c config, op Op, opts ...storagemanifestOption) *StorageManifestMutation {
+	m := &StorageManifestMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeStorageManifest,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withStorageManifestID sets the ID field of the mutation.
+func withStorageManifestID(id int) storagemanifestOption {
+	return func(m *StorageManifestMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *StorageManifest
+		)
+		m.oldValue = func(ctx context.Context) (*StorageManifest, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().StorageManifest.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withStorageManifest sets the old StorageManifest of the mutation.
+func withStorageManifest(node *StorageManifest) storagemanifestOption {
+	return func(m *StorageManifestMutation) {
+		m.oldValue = func(context.Context) (*StorageManifest, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m StorageManifestMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m StorageManifestMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *StorageManifestMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *StorageManifestMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().StorageManifest.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUploadId sets the "uploadId" field.
+func (m *StorageManifestMutation) SetUploadId(i int64) {
+	m.upload = &i
+}
+
+// UploadId returns the value of the "uploadId" field in the mutation.
+func (m *StorageManifestMutation) UploadId() (r int64, exists bool) {
+	v := m.upload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUploadId returns the old "uploadId" field's value of the StorageManifest entity.
+// If the StorageManifest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StorageManifestMutation) OldUploadId(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUploadId is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUploadId requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUploadId: %w", err)
+	}
+	return oldValue.UploadId, nil
+}
+
+// ClearUploadId clears the value of the "uploadId" field.
+func (m *StorageManifestMutation) ClearUploadId() {
+	m.upload = nil
+	m.clearedFields[storagemanifest.FieldUploadId] = struct{}{}
+}
+
+// UploadIdCleared returns if the "uploadId" field was cleared in this mutation.
+func (m *StorageManifestMutation) UploadIdCleared() bool {
+	_, ok := m.clearedFields[storagemanifest.FieldUploadId]
+	return ok
+}
+
+// ResetUploadId resets all changes to the "uploadId" field.
+func (m *StorageManifestMutation) ResetUploadId() {
+	m.upload = nil
+	delete(m.clearedFields, storagemanifest.FieldUploadId)
+}
+
+// SetLocationId sets the "locationId" field.
+func (m *StorageManifestMutation) SetLocationId(s string) {
+	m.location = &s
+}
+
+// LocationId returns the value of the "locationId" field in the mutation.
+func (m *StorageManifestMutation) LocationId() (r string, exists bool) {
+	v := m.location
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLocationId returns the old "locationId" field's value of the StorageManifest entity.
+// If the StorageManifest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StorageManifestMutation) OldLocationId(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLocationId is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLocationId requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLocationId: %w", err)
+	}
+	return oldValue.LocationId, nil
+}
+
+// ClearLocationId clears the value of the "locationId" field.
+func (m *StorageManifestMutation) ClearLocationId() {
+	m.location = nil
+	m.clearedFields[storagemanifest.FieldLocationId] = struct{}{}
+}
+
+// LocationIdCleared returns if the "locationId" field was cleared in this mutation.
+func (m *StorageManifestMutation) LocationIdCleared() bool {
+	_, ok := m.clearedFields[storagemanifest.FieldLocationId]
+	return ok
+}
+
+// ResetLocationId resets all changes to the "locationId" field.
+func (m *StorageManifestMutation) ResetLocationId() {
+	m.location = nil
+	delete(m.clearedFields, storagemanifest.FieldLocationId)
+}
+
+// SetParts sets the "parts" field.
+func (m *StorageManifestMutation) SetParts(b []byte) {
+	m.parts = &b
+}
+
+// Parts returns the value of the "parts" field in the mutation.
+func (m *StorageManifestMutation) Parts() (r []byte, exists bool) {
+	v := m.parts
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldParts returns the old "parts" field's value of the StorageManifest entity.
+// If the StorageManifest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StorageManifestMutation) OldParts(ctx context.Context) (v []byte, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldParts is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldParts requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldParts: %w", err)
+	}
+	return oldValue.Parts, nil
+}
+
+// ResetParts resets all changes to the "parts" field.
+func (m *StorageManifestMutation) ResetParts() {
+	m.parts = nil
+}
+
+// SetCandidateGCAt sets the "candidateGCAt" field.
+func (m *StorageManifestMutation) SetCandidateGCAt(i int64) {
+	m.candidateGCAt = &i
+	m.addcandidateGCAt = nil
+}
+
+// CandidateGCAt returns the value of the "candidateGCAt" field in the mutation.
+func (m *StorageManifestMutation) CandidateGCAt() (r int64, exists bool) {
+	v := m.candidateGCAt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCandidateGCAt returns the old "candidateGCAt" field's value of the StorageManifest entity.
+// If the StorageManifest object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *StorageManifestMutation) OldCandidateGCAt(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCandidateGCAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCandidateGCAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCandidateGCAt: %w", err)
+	}
+	return oldValue.CandidateGCAt, nil
+}
+
+// AddCandidateGCAt adds i to the "candidateGCAt" field.
+func (m *StorageManifestMutation) AddCandidateGCAt(i int64) {
+	if m.addcandidateGCAt != nil {
+		*m.addcandidateGCAt += i
+	} else {
+		m.addcandidateGCAt = &i
+	}
+}
+
+// AddedCandidateGCAt returns the value that was added to the "candidateGCAt" field in this mutation.
+func (m *StorageManifestMutation) AddedCandidateGCAt() (r int64, exists bool) {
+	v := m.addcandidateGCAt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCandidateGCAt clears the value of the "candidateGCAt" field.
+func (m *StorageManifestMutation) ClearCandidateGCAt() {
+	m.candidateGCAt = nil
+	m.addcandidateGCAt = nil
+	m.clearedFields[storagemanifest.FieldCandidateGCAt] = struct{}{}
+}
+
+// CandidateGCAtCleared returns if the "candidateGCAt" field was cleared in this mutation.
+func (m *StorageManifestMutation) CandidateGCAtCleared() bool {
+	_, ok := m.clearedFields[storagemanifest.FieldCandidateGCAt]
+	return ok
+}
+
+// ResetCandidateGCAt resets all changes to the "candidateGCAt" field.
+func (m *StorageManifestMutation) ResetCandidateGCAt() {
+	m.candidateGCAt = nil
+	m.addcandidateGCAt = nil
+	delete(m.clearedFields, storagemanifest.FieldCandidateGCAt)
+}
+
+// SetUploadID sets the "upload" edge to the Upload entity by id.
+func (m *StorageManifestMutation) SetUploadID(id int64) {
+	m.upload = &id
+}
+
+// ClearUpload clears the "upload" edge to the Upload entity.
+func (m *StorageManifestMutation) ClearUpload() {
+	m.clearedupload = true
+	m.clearedFields[storagemanifest.FieldUploadId] = struct{}{}
+}
+
+// UploadCleared reports if the "upload" edge to the Upload entity was cleared.
+func (m *StorageManifestMutation) UploadCleared() bool {
+	return m.UploadIdCleared() || m.clearedupload
+}
+
+// UploadID returns the "upload" edge ID in the mutation.
+func (m *StorageManifestMutation) UploadID() (id int64, exists bool) {
+	if m.upload != nil {
+		return *m.upload, true
+	}
+	return
+}
+
+// UploadIDs returns the "upload" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UploadID instead. It exists only for internal usage by the builders.
+func (m *StorageManifestMutation) UploadIDs() (ids []int64) {
+	if id := m.upload; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUpload resets all changes to the "upload" edge.
+func (m *StorageManifestMutation) ResetUpload() {
+	m.upload = nil
+	m.clearedupload = false
+}
+
+// SetLocationID sets the "location" edge to the StorageLocation entity by id.
+func (m *StorageManifestMutation) SetLocationID(id string) {
+	m.location = &id
+}
+
+// ClearLocation clears the "location" edge to the StorageLocation entity.
+func (m *StorageManifestMutation) ClearLocation() {
+	m.clearedlocation = true
+	m.clearedFields[storagemanifest.FieldLocationId] = struct{}{}
+}
+
+// LocationCleared reports if the "location" edge to the StorageLocation entity was cleared.
+func (m *StorageManifestMutation) LocationCleared() bool {
+	return m.LocationIdCleared() || m.clearedlocation
+}
+
+// LocationID returns the "location" edge ID in the mutation.
+func (m *StorageManifestMutation) LocationID() (id string, exists bool) {
+	if m.location != nil {
+		return *m.location, true
+	}
+	return
+}
+
+// LocationIDs returns the "location" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// LocationID instead. It exists only for internal usage by the builders.
+func (m *StorageManifestMutation) LocationIDs() (ids []string) {
+	if id := m.location; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetLocation resets all changes to the "location" edge.
+func (m *StorageManifestMutation) ResetLocation() {
+	m.location = nil
+	m.clearedlocation = false
+}
+
+// Where appends a list predicates to the StorageManifestMutation builder.
+func (m *StorageManifestMutation) Where(ps ...predicate.StorageManifest) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the StorageManifestMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *StorageManifestMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.StorageManifest, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *StorageManifestMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *StorageManifestMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (StorageManifest).
+func (m *StorageManifestMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *StorageManifestMutation) Fields() []string {
+	fields := make([]string, 0, 4)
+	if m.upload != nil {
+		fields = append(fields, storagemanifest.FieldUploadId)
+	}
+	if m.location != nil {
+		fields = append(fields, storagemanifest.FieldLocationId)
+	}
+	if m.parts != nil {
+		fields = append(fields, storagemanifest.FieldParts)
+	}
+	if m.candidateGCAt != nil {
+		fields = append(fields, storagemanifest.FieldCandidateGCAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *StorageManifestMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case storagemanifest.FieldUploadId:
+		return m.UploadId()
+	case storagemanifest.FieldLocationId:
+		return m.LocationId()
+	case storagemanifest.FieldParts:
+		return m.Parts()
+	case storagemanifest.FieldCandidateGCAt:
+		return m.CandidateGCAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *StorageManifestMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case storagemanifest.FieldUploadId:
+		return m.OldUploadId(ctx)
+	case storagemanifest.FieldLocationId:
+		return m.OldLocationId(ctx)
+	case storagemanifest.FieldParts:
+		return m.OldParts(ctx)
+	case storagemanifest.FieldCandidateGCAt:
+		return m.OldCandidateGCAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown StorageManifest field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *StorageManifestMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case storagemanifest.FieldUploadId:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUploadId(v)
+		return nil
+	case storagemanifest.FieldLocationId:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLocationId(v)
+		return nil
+	case storagemanifest.FieldParts:
+		v, ok := value.([]byte)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetParts(v)
+		return nil
+	case storagemanifest.FieldCandidateGCAt:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCandidateGCAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown StorageManifest field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *StorageManifestMutation) AddedFields() []string {
+	var fields []string
+	if m.addcandidateGCAt != nil {
+		fields = append(fields, storagemanifest.FieldCandidateGCAt)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *StorageManifestMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case storagemanifest.FieldCandidateGCAt:
+		return m.AddedCandidateGCAt()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *StorageManifestMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case storagemanifest.FieldCandidateGCAt:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCandidateGCAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown StorageManifest numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *StorageManifestMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(storagemanifest.FieldUploadId) {
+		fields = append(fields, storagemanifest.FieldUploadId)
+	}
+	if m.FieldCleared(storagemanifest.FieldLocationId) {
+		fields = append(fields, storagemanifest.FieldLocationId)
+	}
+	if m.FieldCleared(storagemanifest.FieldCandidateGCAt) {
+		fields = append(fields, storagemanifest.FieldCandidateGCAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *StorageManifestMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *StorageManifestMutation) ClearField(name string) error {
+	switch name {
+	case storagemanifest.FieldUploadId:
+		m.ClearUploadId()
+		return nil
+	case storagemanifest.FieldLocationId:
+		m.ClearLocationId()
+		return nil
+	case storagemanifest.FieldCandidateGCAt:
+		m.ClearCandidateGCAt()
+		return nil
+	}
+	return fmt.Errorf("unknown StorageManifest nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *StorageManifestMutation) ResetField(name string) error {
+	switch name {
+	case storagemanifest.FieldUploadId:
+		m.ResetUploadId()
+		return nil
+	case storagemanifest.FieldLocationId:
+		m.ResetLocationId()
+		return nil
+	case storagemanifest.FieldParts:
+		m.ResetParts()
+		return nil
+	case storagemanifest.FieldCandidateGCAt:
+		m.ResetCandidateGCAt()
+		return nil
+	}
+	return fmt.Errorf("unknown StorageManifest field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *StorageManifestMutation) AddedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.upload != nil {
+		edges = append(edges, storagemanifest.EdgeUpload)
+	}
+	if m.location != nil {
+		edges = append(edges, storagemanifest.EdgeLocation)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *StorageManifestMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case storagemanifest.EdgeUpload:
+		if id := m.upload; id != nil {
+			return []ent.Value{*id}
+		}
+	case storagemanifest.EdgeLocation:
+		if id := m.location; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *StorageManifestMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 2)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *StorageManifestMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *StorageManifestMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 2)
+	if m.clearedupload {
+		edges = append(edges, storagemanifest.EdgeUpload)
+	}
+	if m.clearedlocation {
+		edges = append(edges, storagemanifest.EdgeLocation)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *StorageManifestMutation) EdgeCleared(name string) bool {
+	switch name {
+	case storagemanifest.EdgeUpload:
+		return m.clearedupload
+	case storagemanifest.EdgeLocation:
+		return m.clearedlocation
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *StorageManifestMutation) ClearEdge(name string) error {
+	switch name {
+	case storagemanifest.EdgeUpload:
+		m.ClearUpload()
+		return nil
+	case storagemanifest.EdgeLocation:
+		m.ClearLocation()
+		return nil
+	}
+	return fmt.Errorf("unknown StorageManifest unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *StorageManifestMutation) ResetEdge(name string) error {
+	switch name {
+	case storagemanifest.EdgeUpload:
+		m.ResetUpload()
+		return nil
+	case storagemanifest.EdgeLocation:
+		m.ResetLocation()
+		return nil
+	}
+	return fmt.Errorf("unknown StorageManifest edge %s", name)
 }
 
 // StorageReaderLeaseMutation represents an operation that mutates the StorageReaderLease nodes in the graph.
@@ -4093,7 +4940,14 @@ type UploadMutation struct {
 	committedPartCount         *int
 	addcommittedPartCount      *int
 	tupleHash                  *string
+	blockManifestVersion       *int64
+	addblockManifestVersion    *int64
 	clearedFields              map[string]struct{}
+	blocks                     map[int]struct{}
+	removedblocks              map[int]struct{}
+	clearedblocks              bool
+	manifest                   *int
+	clearedmanifest            bool
 	done                       bool
 	oldValue                   func(context.Context) (*Upload, error)
 	predicates                 []predicate.Upload
@@ -4740,6 +5594,155 @@ func (m *UploadMutation) ResetTupleHash() {
 	delete(m.clearedFields, upload.FieldTupleHash)
 }
 
+// SetBlockManifestVersion sets the "blockManifestVersion" field.
+func (m *UploadMutation) SetBlockManifestVersion(i int64) {
+	m.blockManifestVersion = &i
+	m.addblockManifestVersion = nil
+}
+
+// BlockManifestVersion returns the value of the "blockManifestVersion" field in the mutation.
+func (m *UploadMutation) BlockManifestVersion() (r int64, exists bool) {
+	v := m.blockManifestVersion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBlockManifestVersion returns the old "blockManifestVersion" field's value of the Upload entity.
+// If the Upload object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UploadMutation) OldBlockManifestVersion(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBlockManifestVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBlockManifestVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBlockManifestVersion: %w", err)
+	}
+	return oldValue.BlockManifestVersion, nil
+}
+
+// AddBlockManifestVersion adds i to the "blockManifestVersion" field.
+func (m *UploadMutation) AddBlockManifestVersion(i int64) {
+	if m.addblockManifestVersion != nil {
+		*m.addblockManifestVersion += i
+	} else {
+		m.addblockManifestVersion = &i
+	}
+}
+
+// AddedBlockManifestVersion returns the value that was added to the "blockManifestVersion" field in this mutation.
+func (m *UploadMutation) AddedBlockManifestVersion() (r int64, exists bool) {
+	v := m.addblockManifestVersion
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetBlockManifestVersion resets all changes to the "blockManifestVersion" field.
+func (m *UploadMutation) ResetBlockManifestVersion() {
+	m.blockManifestVersion = nil
+	m.addblockManifestVersion = nil
+}
+
+// AddBlockIDs adds the "blocks" edge to the UploadBlock entity by ids.
+func (m *UploadMutation) AddBlockIDs(ids ...int) {
+	if m.blocks == nil {
+		m.blocks = make(map[int]struct{})
+	}
+	for i := range ids {
+		m.blocks[ids[i]] = struct{}{}
+	}
+}
+
+// ClearBlocks clears the "blocks" edge to the UploadBlock entity.
+func (m *UploadMutation) ClearBlocks() {
+	m.clearedblocks = true
+}
+
+// BlocksCleared reports if the "blocks" edge to the UploadBlock entity was cleared.
+func (m *UploadMutation) BlocksCleared() bool {
+	return m.clearedblocks
+}
+
+// RemoveBlockIDs removes the "blocks" edge to the UploadBlock entity by IDs.
+func (m *UploadMutation) RemoveBlockIDs(ids ...int) {
+	if m.removedblocks == nil {
+		m.removedblocks = make(map[int]struct{})
+	}
+	for i := range ids {
+		delete(m.blocks, ids[i])
+		m.removedblocks[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedBlocks returns the removed IDs of the "blocks" edge to the UploadBlock entity.
+func (m *UploadMutation) RemovedBlocksIDs() (ids []int) {
+	for id := range m.removedblocks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// BlocksIDs returns the "blocks" edge IDs in the mutation.
+func (m *UploadMutation) BlocksIDs() (ids []int) {
+	for id := range m.blocks {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetBlocks resets all changes to the "blocks" edge.
+func (m *UploadMutation) ResetBlocks() {
+	m.blocks = nil
+	m.clearedblocks = false
+	m.removedblocks = nil
+}
+
+// SetManifestID sets the "manifest" edge to the StorageManifest entity by id.
+func (m *UploadMutation) SetManifestID(id int) {
+	m.manifest = &id
+}
+
+// ClearManifest clears the "manifest" edge to the StorageManifest entity.
+func (m *UploadMutation) ClearManifest() {
+	m.clearedmanifest = true
+}
+
+// ManifestCleared reports if the "manifest" edge to the StorageManifest entity was cleared.
+func (m *UploadMutation) ManifestCleared() bool {
+	return m.clearedmanifest
+}
+
+// ManifestID returns the "manifest" edge ID in the mutation.
+func (m *UploadMutation) ManifestID() (id int, exists bool) {
+	if m.manifest != nil {
+		return *m.manifest, true
+	}
+	return
+}
+
+// ManifestIDs returns the "manifest" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ManifestID instead. It exists only for internal usage by the builders.
+func (m *UploadMutation) ManifestIDs() (ids []int) {
+	if id := m.manifest; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetManifest resets all changes to the "manifest" edge.
+func (m *UploadMutation) ResetManifest() {
+	m.manifest = nil
+	m.clearedmanifest = false
+}
+
 // Where appends a list predicates to the UploadMutation builder.
 func (m *UploadMutation) Where(ps ...predicate.Upload) {
 	m.predicates = append(m.predicates, ps...)
@@ -4774,7 +5777,7 @@ func (m *UploadMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UploadMutation) Fields() []string {
-	fields := make([]string, 0, 11)
+	fields := make([]string, 0, 12)
 	if m.key != nil {
 		fields = append(fields, upload.FieldKey)
 	}
@@ -4808,6 +5811,9 @@ func (m *UploadMutation) Fields() []string {
 	if m.tupleHash != nil {
 		fields = append(fields, upload.FieldTupleHash)
 	}
+	if m.blockManifestVersion != nil {
+		fields = append(fields, upload.FieldBlockManifestVersion)
+	}
 	return fields
 }
 
@@ -4838,6 +5844,8 @@ func (m *UploadMutation) Field(name string) (ent.Value, bool) {
 		return m.CommittedPartCount()
 	case upload.FieldTupleHash:
 		return m.TupleHash()
+	case upload.FieldBlockManifestVersion:
+		return m.BlockManifestVersion()
 	}
 	return nil, false
 }
@@ -4869,6 +5877,8 @@ func (m *UploadMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldCommittedPartCount(ctx)
 	case upload.FieldTupleHash:
 		return m.OldTupleHash(ctx)
+	case upload.FieldBlockManifestVersion:
+		return m.OldBlockManifestVersion(ctx)
 	}
 	return nil, fmt.Errorf("unknown Upload field %s", name)
 }
@@ -4955,6 +5965,13 @@ func (m *UploadMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTupleHash(v)
 		return nil
+	case upload.FieldBlockManifestVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBlockManifestVersion(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Upload field %s", name)
 }
@@ -4978,6 +5995,9 @@ func (m *UploadMutation) AddedFields() []string {
 	if m.addcommittedPartCount != nil {
 		fields = append(fields, upload.FieldCommittedPartCount)
 	}
+	if m.addblockManifestVersion != nil {
+		fields = append(fields, upload.FieldBlockManifestVersion)
+	}
 	return fields
 }
 
@@ -4996,6 +6016,8 @@ func (m *UploadMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedFinishedPartUploadCount()
 	case upload.FieldCommittedPartCount:
 		return m.AddedCommittedPartCount()
+	case upload.FieldBlockManifestVersion:
+		return m.AddedBlockManifestVersion()
 	}
 	return nil, false
 }
@@ -5039,6 +6061,13 @@ func (m *UploadMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddCommittedPartCount(v)
+		return nil
+	case upload.FieldBlockManifestVersion:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddBlockManifestVersion(v)
 		return nil
 	}
 	return fmt.Errorf("unknown Upload numeric field %s", name)
@@ -5121,54 +6150,702 @@ func (m *UploadMutation) ResetField(name string) error {
 	case upload.FieldTupleHash:
 		m.ResetTupleHash()
 		return nil
+	case upload.FieldBlockManifestVersion:
+		m.ResetBlockManifestVersion()
+		return nil
 	}
 	return fmt.Errorf("unknown Upload field %s", name)
 }
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UploadMutation) AddedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 2)
+	if m.blocks != nil {
+		edges = append(edges, upload.EdgeBlocks)
+	}
+	if m.manifest != nil {
+		edges = append(edges, upload.EdgeManifest)
+	}
 	return edges
 }
 
 // AddedIDs returns all IDs (to other nodes) that were added for the given edge
 // name in this mutation.
 func (m *UploadMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case upload.EdgeBlocks:
+		ids := make([]ent.Value, 0, len(m.blocks))
+		for id := range m.blocks {
+			ids = append(ids, id)
+		}
+		return ids
+	case upload.EdgeManifest:
+		if id := m.manifest; id != nil {
+			return []ent.Value{*id}
+		}
+	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UploadMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 2)
+	if m.removedblocks != nil {
+		edges = append(edges, upload.EdgeBlocks)
+	}
 	return edges
 }
 
 // RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
 // the given name in this mutation.
 func (m *UploadMutation) RemovedIDs(name string) []ent.Value {
+	switch name {
+	case upload.EdgeBlocks:
+		ids := make([]ent.Value, 0, len(m.removedblocks))
+		for id := range m.removedblocks {
+			ids = append(ids, id)
+		}
+		return ids
+	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UploadMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 0)
+	edges := make([]string, 0, 2)
+	if m.clearedblocks {
+		edges = append(edges, upload.EdgeBlocks)
+	}
+	if m.clearedmanifest {
+		edges = append(edges, upload.EdgeManifest)
+	}
 	return edges
 }
 
 // EdgeCleared returns a boolean which indicates if the edge with the given name
 // was cleared in this mutation.
 func (m *UploadMutation) EdgeCleared(name string) bool {
+	switch name {
+	case upload.EdgeBlocks:
+		return m.clearedblocks
+	case upload.EdgeManifest:
+		return m.clearedmanifest
+	}
 	return false
 }
 
 // ClearEdge clears the value of the edge with the given name. It returns an error
 // if that edge is not defined in the schema.
 func (m *UploadMutation) ClearEdge(name string) error {
+	switch name {
+	case upload.EdgeManifest:
+		m.ClearManifest()
+		return nil
+	}
 	return fmt.Errorf("unknown Upload unique edge %s", name)
 }
 
 // ResetEdge resets all changes to the edge with the given name in this mutation.
 // It returns an error if the edge is not defined in the schema.
 func (m *UploadMutation) ResetEdge(name string) error {
+	switch name {
+	case upload.EdgeBlocks:
+		m.ResetBlocks()
+		return nil
+	case upload.EdgeManifest:
+		m.ResetManifest()
+		return nil
+	}
 	return fmt.Errorf("unknown Upload edge %s", name)
+}
+
+// UploadBlockMutation represents an operation that mutates the UploadBlock nodes in the graph.
+type UploadBlockMutation struct {
+	config
+	op            Op
+	typ           string
+	id            *int
+	blockHash     *string
+	candidateId   *string
+	sizeBytes     *int64
+	addsizeBytes  *int64
+	clearedFields map[string]struct{}
+	upload        *int64
+	clearedupload bool
+	done          bool
+	oldValue      func(context.Context) (*UploadBlock, error)
+	predicates    []predicate.UploadBlock
+}
+
+var _ ent.Mutation = (*UploadBlockMutation)(nil)
+
+// uploadblockOption allows management of the mutation configuration using functional options.
+type uploadblockOption func(*UploadBlockMutation)
+
+// newUploadBlockMutation creates new mutation for the UploadBlock entity.
+func newUploadBlockMutation(c config, op Op, opts ...uploadblockOption) *UploadBlockMutation {
+	m := &UploadBlockMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUploadBlock,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUploadBlockID sets the ID field of the mutation.
+func withUploadBlockID(id int) uploadblockOption {
+	return func(m *UploadBlockMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UploadBlock
+		)
+		m.oldValue = func(ctx context.Context) (*UploadBlock, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UploadBlock.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUploadBlock sets the old UploadBlock of the mutation.
+func withUploadBlock(node *UploadBlock) uploadblockOption {
+	return func(m *UploadBlockMutation) {
+		m.oldValue = func(context.Context) (*UploadBlock, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UploadBlockMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UploadBlockMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UploadBlockMutation) ID() (id int, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UploadBlockMutation) IDs(ctx context.Context) ([]int, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UploadBlock.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetUploadId sets the "uploadId" field.
+func (m *UploadBlockMutation) SetUploadId(i int64) {
+	m.upload = &i
+}
+
+// UploadId returns the value of the "uploadId" field in the mutation.
+func (m *UploadBlockMutation) UploadId() (r int64, exists bool) {
+	v := m.upload
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUploadId returns the old "uploadId" field's value of the UploadBlock entity.
+// If the UploadBlock object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UploadBlockMutation) OldUploadId(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUploadId is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUploadId requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUploadId: %w", err)
+	}
+	return oldValue.UploadId, nil
+}
+
+// ResetUploadId resets all changes to the "uploadId" field.
+func (m *UploadBlockMutation) ResetUploadId() {
+	m.upload = nil
+}
+
+// SetBlockHash sets the "blockHash" field.
+func (m *UploadBlockMutation) SetBlockHash(s string) {
+	m.blockHash = &s
+}
+
+// BlockHash returns the value of the "blockHash" field in the mutation.
+func (m *UploadBlockMutation) BlockHash() (r string, exists bool) {
+	v := m.blockHash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBlockHash returns the old "blockHash" field's value of the UploadBlock entity.
+// If the UploadBlock object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UploadBlockMutation) OldBlockHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBlockHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBlockHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBlockHash: %w", err)
+	}
+	return oldValue.BlockHash, nil
+}
+
+// ResetBlockHash resets all changes to the "blockHash" field.
+func (m *UploadBlockMutation) ResetBlockHash() {
+	m.blockHash = nil
+}
+
+// SetCandidateId sets the "candidateId" field.
+func (m *UploadBlockMutation) SetCandidateId(s string) {
+	m.candidateId = &s
+}
+
+// CandidateId returns the value of the "candidateId" field in the mutation.
+func (m *UploadBlockMutation) CandidateId() (r string, exists bool) {
+	v := m.candidateId
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCandidateId returns the old "candidateId" field's value of the UploadBlock entity.
+// If the UploadBlock object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UploadBlockMutation) OldCandidateId(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCandidateId is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCandidateId requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCandidateId: %w", err)
+	}
+	return oldValue.CandidateId, nil
+}
+
+// ResetCandidateId resets all changes to the "candidateId" field.
+func (m *UploadBlockMutation) ResetCandidateId() {
+	m.candidateId = nil
+}
+
+// SetSizeBytes sets the "sizeBytes" field.
+func (m *UploadBlockMutation) SetSizeBytes(i int64) {
+	m.sizeBytes = &i
+	m.addsizeBytes = nil
+}
+
+// SizeBytes returns the value of the "sizeBytes" field in the mutation.
+func (m *UploadBlockMutation) SizeBytes() (r int64, exists bool) {
+	v := m.sizeBytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSizeBytes returns the old "sizeBytes" field's value of the UploadBlock entity.
+// If the UploadBlock object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UploadBlockMutation) OldSizeBytes(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSizeBytes is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSizeBytes requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSizeBytes: %w", err)
+	}
+	return oldValue.SizeBytes, nil
+}
+
+// AddSizeBytes adds i to the "sizeBytes" field.
+func (m *UploadBlockMutation) AddSizeBytes(i int64) {
+	if m.addsizeBytes != nil {
+		*m.addsizeBytes += i
+	} else {
+		m.addsizeBytes = &i
+	}
+}
+
+// AddedSizeBytes returns the value that was added to the "sizeBytes" field in this mutation.
+func (m *UploadBlockMutation) AddedSizeBytes() (r int64, exists bool) {
+	v := m.addsizeBytes
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSizeBytes resets all changes to the "sizeBytes" field.
+func (m *UploadBlockMutation) ResetSizeBytes() {
+	m.sizeBytes = nil
+	m.addsizeBytes = nil
+}
+
+// SetUploadID sets the "upload" edge to the Upload entity by id.
+func (m *UploadBlockMutation) SetUploadID(id int64) {
+	m.upload = &id
+}
+
+// ClearUpload clears the "upload" edge to the Upload entity.
+func (m *UploadBlockMutation) ClearUpload() {
+	m.clearedupload = true
+	m.clearedFields[uploadblock.FieldUploadId] = struct{}{}
+}
+
+// UploadCleared reports if the "upload" edge to the Upload entity was cleared.
+func (m *UploadBlockMutation) UploadCleared() bool {
+	return m.clearedupload
+}
+
+// UploadID returns the "upload" edge ID in the mutation.
+func (m *UploadBlockMutation) UploadID() (id int64, exists bool) {
+	if m.upload != nil {
+		return *m.upload, true
+	}
+	return
+}
+
+// UploadIDs returns the "upload" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UploadID instead. It exists only for internal usage by the builders.
+func (m *UploadBlockMutation) UploadIDs() (ids []int64) {
+	if id := m.upload; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUpload resets all changes to the "upload" edge.
+func (m *UploadBlockMutation) ResetUpload() {
+	m.upload = nil
+	m.clearedupload = false
+}
+
+// Where appends a list predicates to the UploadBlockMutation builder.
+func (m *UploadBlockMutation) Where(ps ...predicate.UploadBlock) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UploadBlockMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UploadBlockMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UploadBlock, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UploadBlockMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UploadBlockMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UploadBlock).
+func (m *UploadBlockMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UploadBlockMutation) Fields() []string {
+	fields := make([]string, 0, 4)
+	if m.upload != nil {
+		fields = append(fields, uploadblock.FieldUploadId)
+	}
+	if m.blockHash != nil {
+		fields = append(fields, uploadblock.FieldBlockHash)
+	}
+	if m.candidateId != nil {
+		fields = append(fields, uploadblock.FieldCandidateId)
+	}
+	if m.sizeBytes != nil {
+		fields = append(fields, uploadblock.FieldSizeBytes)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UploadBlockMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case uploadblock.FieldUploadId:
+		return m.UploadId()
+	case uploadblock.FieldBlockHash:
+		return m.BlockHash()
+	case uploadblock.FieldCandidateId:
+		return m.CandidateId()
+	case uploadblock.FieldSizeBytes:
+		return m.SizeBytes()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UploadBlockMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case uploadblock.FieldUploadId:
+		return m.OldUploadId(ctx)
+	case uploadblock.FieldBlockHash:
+		return m.OldBlockHash(ctx)
+	case uploadblock.FieldCandidateId:
+		return m.OldCandidateId(ctx)
+	case uploadblock.FieldSizeBytes:
+		return m.OldSizeBytes(ctx)
+	}
+	return nil, fmt.Errorf("unknown UploadBlock field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UploadBlockMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case uploadblock.FieldUploadId:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUploadId(v)
+		return nil
+	case uploadblock.FieldBlockHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBlockHash(v)
+		return nil
+	case uploadblock.FieldCandidateId:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCandidateId(v)
+		return nil
+	case uploadblock.FieldSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSizeBytes(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UploadBlock field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UploadBlockMutation) AddedFields() []string {
+	var fields []string
+	if m.addsizeBytes != nil {
+		fields = append(fields, uploadblock.FieldSizeBytes)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UploadBlockMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case uploadblock.FieldSizeBytes:
+		return m.AddedSizeBytes()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UploadBlockMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case uploadblock.FieldSizeBytes:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSizeBytes(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UploadBlock numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UploadBlockMutation) ClearedFields() []string {
+	return nil
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UploadBlockMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UploadBlockMutation) ClearField(name string) error {
+	return fmt.Errorf("unknown UploadBlock nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UploadBlockMutation) ResetField(name string) error {
+	switch name {
+	case uploadblock.FieldUploadId:
+		m.ResetUploadId()
+		return nil
+	case uploadblock.FieldBlockHash:
+		m.ResetBlockHash()
+		return nil
+	case uploadblock.FieldCandidateId:
+		m.ResetCandidateId()
+		return nil
+	case uploadblock.FieldSizeBytes:
+		m.ResetSizeBytes()
+		return nil
+	}
+	return fmt.Errorf("unknown UploadBlock field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UploadBlockMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.upload != nil {
+		edges = append(edges, uploadblock.EdgeUpload)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UploadBlockMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case uploadblock.EdgeUpload:
+		if id := m.upload; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UploadBlockMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UploadBlockMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UploadBlockMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedupload {
+		edges = append(edges, uploadblock.EdgeUpload)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UploadBlockMutation) EdgeCleared(name string) bool {
+	switch name {
+	case uploadblock.EdgeUpload:
+		return m.clearedupload
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UploadBlockMutation) ClearEdge(name string) error {
+	switch name {
+	case uploadblock.EdgeUpload:
+		m.ClearUpload()
+		return nil
+	}
+	return fmt.Errorf("unknown UploadBlock unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UploadBlockMutation) ResetEdge(name string) error {
+	switch name {
+	case uploadblock.EdgeUpload:
+		m.ResetUpload()
+		return nil
+	}
+	return fmt.Errorf("unknown UploadBlock edge %s", name)
 }

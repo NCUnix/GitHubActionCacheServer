@@ -9,7 +9,9 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/uploadblock"
 )
 
 // UploadCreate is the builder for creating a Upload entity.
@@ -125,10 +127,58 @@ func (_c *UploadCreate) SetNillableTupleHash(v *string) *UploadCreate {
 	return _c
 }
 
+// SetBlockManifestVersion sets the "blockManifestVersion" field.
+func (_c *UploadCreate) SetBlockManifestVersion(v int64) *UploadCreate {
+	_c.mutation.SetBlockManifestVersion(v)
+	return _c
+}
+
+// SetNillableBlockManifestVersion sets the "blockManifestVersion" field if the given value is not nil.
+func (_c *UploadCreate) SetNillableBlockManifestVersion(v *int64) *UploadCreate {
+	if v != nil {
+		_c.SetBlockManifestVersion(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *UploadCreate) SetID(v int64) *UploadCreate {
 	_c.mutation.SetID(v)
 	return _c
+}
+
+// AddBlockIDs adds the "blocks" edge to the UploadBlock entity by IDs.
+func (_c *UploadCreate) AddBlockIDs(ids ...int) *UploadCreate {
+	_c.mutation.AddBlockIDs(ids...)
+	return _c
+}
+
+// AddBlocks adds the "blocks" edges to the UploadBlock entity.
+func (_c *UploadCreate) AddBlocks(v ...*UploadBlock) *UploadCreate {
+	ids := make([]int, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddBlockIDs(ids...)
+}
+
+// SetManifestID sets the "manifest" edge to the StorageManifest entity by ID.
+func (_c *UploadCreate) SetManifestID(id int) *UploadCreate {
+	_c.mutation.SetManifestID(id)
+	return _c
+}
+
+// SetNillableManifestID sets the "manifest" edge to the StorageManifest entity by ID if the given value is not nil.
+func (_c *UploadCreate) SetNillableManifestID(id *int) *UploadCreate {
+	if id != nil {
+		_c = _c.SetManifestID(*id)
+	}
+	return _c
+}
+
+// SetManifest sets the "manifest" edge to the StorageManifest entity.
+func (_c *UploadCreate) SetManifest(v *StorageManifest) *UploadCreate {
+	return _c.SetManifestID(v.ID)
 }
 
 // Mutation returns the UploadMutation object of the builder.
@@ -173,6 +223,10 @@ func (_c *UploadCreate) defaults() {
 	if _, ok := _c.mutation.FinishedPartUploadCount(); !ok {
 		v := upload.DefaultFinishedPartUploadCount
 		_c.mutation.SetFinishedPartUploadCount(v)
+	}
+	if _, ok := _c.mutation.BlockManifestVersion(); !ok {
+		v := upload.DefaultBlockManifestVersion
+		_c.mutation.SetBlockManifestVersion(v)
 	}
 }
 
@@ -245,6 +299,14 @@ func (_c *UploadCreate) check() error {
 	if v, ok := _c.mutation.TupleHash(); ok {
 		if err := upload.TupleHashValidator(v); err != nil {
 			return &ValidationError{Name: "tupleHash", err: fmt.Errorf(`ent: validator failed for field "Upload.tupleHash": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.BlockManifestVersion(); !ok {
+		return &ValidationError{Name: "blockManifestVersion", err: errors.New(`ent: missing required field "Upload.blockManifestVersion"`)}
+	}
+	if v, ok := _c.mutation.BlockManifestVersion(); ok {
+		if err := upload.BlockManifestVersionValidator(v); err != nil {
+			return &ValidationError{Name: "blockManifestVersion", err: fmt.Errorf(`ent: validator failed for field "Upload.blockManifestVersion": %w`, err)}
 		}
 	}
 	return nil
@@ -322,6 +384,42 @@ func (_c *UploadCreate) createSpec() (*Upload, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TupleHash(); ok {
 		_spec.SetField(upload.FieldTupleHash, field.TypeString, value)
 		_node.TupleHash = &value
+	}
+	if value, ok := _c.mutation.BlockManifestVersion(); ok {
+		_spec.SetField(upload.FieldBlockManifestVersion, field.TypeInt64, value)
+		_node.BlockManifestVersion = value
+	}
+	if nodes := _c.mutation.BlocksIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   upload.BlocksTable,
+			Columns: []string{upload.BlocksColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(uploadblock.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ManifestIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   upload.ManifestTable,
+			Columns: []string{upload.ManifestColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(storagemanifest.FieldID, field.TypeInt),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
 }

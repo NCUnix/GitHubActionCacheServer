@@ -19,8 +19,10 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/joblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/uploadblock"
 
 	stdsql "database/sql"
 )
@@ -38,10 +40,14 @@ type Client struct {
 	StorageDeletion *StorageDeletionClient
 	// StorageLocation is the client for interacting with the StorageLocation builders.
 	StorageLocation *StorageLocationClient
+	// StorageManifest is the client for interacting with the StorageManifest builders.
+	StorageManifest *StorageManifestClient
 	// StorageReaderLease is the client for interacting with the StorageReaderLease builders.
 	StorageReaderLease *StorageReaderLeaseClient
 	// Upload is the client for interacting with the Upload builders.
 	Upload *UploadClient
+	// UploadBlock is the client for interacting with the UploadBlock builders.
+	UploadBlock *UploadBlockClient
 }
 
 // NewClient creates a new client configured with the given options.
@@ -57,8 +63,10 @@ func (c *Client) init() {
 	c.JobLock = NewJobLockClient(c.config)
 	c.StorageDeletion = NewStorageDeletionClient(c.config)
 	c.StorageLocation = NewStorageLocationClient(c.config)
+	c.StorageManifest = NewStorageManifestClient(c.config)
 	c.StorageReaderLease = NewStorageReaderLeaseClient(c.config)
 	c.Upload = NewUploadClient(c.config)
+	c.UploadBlock = NewUploadBlockClient(c.config)
 }
 
 type (
@@ -155,8 +163,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		JobLock:            NewJobLockClient(cfg),
 		StorageDeletion:    NewStorageDeletionClient(cfg),
 		StorageLocation:    NewStorageLocationClient(cfg),
+		StorageManifest:    NewStorageManifestClient(cfg),
 		StorageReaderLease: NewStorageReaderLeaseClient(cfg),
 		Upload:             NewUploadClient(cfg),
+		UploadBlock:        NewUploadBlockClient(cfg),
 	}, nil
 }
 
@@ -180,8 +190,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		JobLock:            NewJobLockClient(cfg),
 		StorageDeletion:    NewStorageDeletionClient(cfg),
 		StorageLocation:    NewStorageLocationClient(cfg),
+		StorageManifest:    NewStorageManifestClient(cfg),
 		StorageReaderLease: NewStorageReaderLeaseClient(cfg),
 		Upload:             NewUploadClient(cfg),
+		UploadBlock:        NewUploadBlockClient(cfg),
 	}, nil
 }
 
@@ -212,7 +224,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.CacheEntry, c.JobLock, c.StorageDeletion, c.StorageLocation,
-		c.StorageReaderLease, c.Upload,
+		c.StorageManifest, c.StorageReaderLease, c.Upload, c.UploadBlock,
 	} {
 		n.Use(hooks...)
 	}
@@ -223,7 +235,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.CacheEntry, c.JobLock, c.StorageDeletion, c.StorageLocation,
-		c.StorageReaderLease, c.Upload,
+		c.StorageManifest, c.StorageReaderLease, c.Upload, c.UploadBlock,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -240,10 +252,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.StorageDeletion.mutate(ctx, m)
 	case *StorageLocationMutation:
 		return c.StorageLocation.mutate(ctx, m)
+	case *StorageManifestMutation:
+		return c.StorageManifest.mutate(ctx, m)
 	case *StorageReaderLeaseMutation:
 		return c.StorageReaderLease.mutate(ctx, m)
 	case *UploadMutation:
 		return c.Upload.mutate(ctx, m)
+	case *UploadBlockMutation:
+		return c.UploadBlock.mutate(ctx, m)
 	default:
 		return nil, fmt.Errorf("ent: unknown mutation type %T", m)
 	}
@@ -804,6 +820,22 @@ func (c *StorageLocationClient) QueryReaderLeases(_m *StorageLocation) *StorageR
 	return query
 }
 
+// QueryManifest queries the manifest edge of a StorageLocation.
+func (c *StorageLocationClient) QueryManifest(_m *StorageLocation) *StorageManifestQuery {
+	query := (&StorageManifestClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(storagelocation.Table, storagelocation.FieldID, id),
+			sqlgraph.To(storagemanifest.Table, storagemanifest.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, storagelocation.ManifestTable, storagelocation.ManifestColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *StorageLocationClient) Hooks() []Hook {
 	return c.hooks.StorageLocation
@@ -826,6 +858,171 @@ func (c *StorageLocationClient) mutate(ctx context.Context, m *StorageLocationMu
 		return (&StorageLocationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown StorageLocation mutation op: %q", m.Op())
+	}
+}
+
+// StorageManifestClient is a client for the StorageManifest schema.
+type StorageManifestClient struct {
+	config
+}
+
+// NewStorageManifestClient returns a client for the StorageManifest from the given config.
+func NewStorageManifestClient(c config) *StorageManifestClient {
+	return &StorageManifestClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `storagemanifest.Hooks(f(g(h())))`.
+func (c *StorageManifestClient) Use(hooks ...Hook) {
+	c.hooks.StorageManifest = append(c.hooks.StorageManifest, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `storagemanifest.Intercept(f(g(h())))`.
+func (c *StorageManifestClient) Intercept(interceptors ...Interceptor) {
+	c.inters.StorageManifest = append(c.inters.StorageManifest, interceptors...)
+}
+
+// Create returns a builder for creating a StorageManifest entity.
+func (c *StorageManifestClient) Create() *StorageManifestCreate {
+	mutation := newStorageManifestMutation(c.config, OpCreate)
+	return &StorageManifestCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of StorageManifest entities.
+func (c *StorageManifestClient) CreateBulk(builders ...*StorageManifestCreate) *StorageManifestCreateBulk {
+	return &StorageManifestCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *StorageManifestClient) MapCreateBulk(slice any, setFunc func(*StorageManifestCreate, int)) *StorageManifestCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &StorageManifestCreateBulk{err: fmt.Errorf("calling to StorageManifestClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*StorageManifestCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &StorageManifestCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for StorageManifest.
+func (c *StorageManifestClient) Update() *StorageManifestUpdate {
+	mutation := newStorageManifestMutation(c.config, OpUpdate)
+	return &StorageManifestUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *StorageManifestClient) UpdateOne(_m *StorageManifest) *StorageManifestUpdateOne {
+	mutation := newStorageManifestMutation(c.config, OpUpdateOne, withStorageManifest(_m))
+	return &StorageManifestUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *StorageManifestClient) UpdateOneID(id int) *StorageManifestUpdateOne {
+	mutation := newStorageManifestMutation(c.config, OpUpdateOne, withStorageManifestID(id))
+	return &StorageManifestUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for StorageManifest.
+func (c *StorageManifestClient) Delete() *StorageManifestDelete {
+	mutation := newStorageManifestMutation(c.config, OpDelete)
+	return &StorageManifestDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *StorageManifestClient) DeleteOne(_m *StorageManifest) *StorageManifestDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *StorageManifestClient) DeleteOneID(id int) *StorageManifestDeleteOne {
+	builder := c.Delete().Where(storagemanifest.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &StorageManifestDeleteOne{builder}
+}
+
+// Query returns a query builder for StorageManifest.
+func (c *StorageManifestClient) Query() *StorageManifestQuery {
+	return &StorageManifestQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeStorageManifest},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a StorageManifest entity by its id.
+func (c *StorageManifestClient) Get(ctx context.Context, id int) (*StorageManifest, error) {
+	return c.Query().Where(storagemanifest.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *StorageManifestClient) GetX(ctx context.Context, id int) *StorageManifest {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUpload queries the upload edge of a StorageManifest.
+func (c *StorageManifestClient) QueryUpload(_m *StorageManifest) *UploadQuery {
+	query := (&UploadClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(storagemanifest.Table, storagemanifest.FieldID, id),
+			sqlgraph.To(upload.Table, upload.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, storagemanifest.UploadTable, storagemanifest.UploadColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryLocation queries the location edge of a StorageManifest.
+func (c *StorageManifestClient) QueryLocation(_m *StorageManifest) *StorageLocationQuery {
+	query := (&StorageLocationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(storagemanifest.Table, storagemanifest.FieldID, id),
+			sqlgraph.To(storagelocation.Table, storagelocation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, storagemanifest.LocationTable, storagemanifest.LocationColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *StorageManifestClient) Hooks() []Hook {
+	return c.hooks.StorageManifest
+}
+
+// Interceptors returns the client interceptors.
+func (c *StorageManifestClient) Interceptors() []Interceptor {
+	return c.inters.StorageManifest
+}
+
+func (c *StorageManifestClient) mutate(ctx context.Context, m *StorageManifestMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&StorageManifestCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&StorageManifestUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&StorageManifestUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&StorageManifestDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown StorageManifest mutation op: %q", m.Op())
 	}
 }
 
@@ -1086,6 +1283,38 @@ func (c *UploadClient) GetX(ctx context.Context, id int64) *Upload {
 	return obj
 }
 
+// QueryBlocks queries the blocks edge of a Upload.
+func (c *UploadClient) QueryBlocks(_m *Upload) *UploadBlockQuery {
+	query := (&UploadBlockClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(upload.Table, upload.FieldID, id),
+			sqlgraph.To(uploadblock.Table, uploadblock.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, upload.BlocksTable, upload.BlocksColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryManifest queries the manifest edge of a Upload.
+func (c *UploadClient) QueryManifest(_m *Upload) *StorageManifestQuery {
+	query := (&StorageManifestClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(upload.Table, upload.FieldID, id),
+			sqlgraph.To(storagemanifest.Table, storagemanifest.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, upload.ManifestTable, upload.ManifestColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *UploadClient) Hooks() []Hook {
 	return c.hooks.Upload
@@ -1111,15 +1340,164 @@ func (c *UploadClient) mutate(ctx context.Context, m *UploadMutation) (Value, er
 	}
 }
 
+// UploadBlockClient is a client for the UploadBlock schema.
+type UploadBlockClient struct {
+	config
+}
+
+// NewUploadBlockClient returns a client for the UploadBlock from the given config.
+func NewUploadBlockClient(c config) *UploadBlockClient {
+	return &UploadBlockClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `uploadblock.Hooks(f(g(h())))`.
+func (c *UploadBlockClient) Use(hooks ...Hook) {
+	c.hooks.UploadBlock = append(c.hooks.UploadBlock, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `uploadblock.Intercept(f(g(h())))`.
+func (c *UploadBlockClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UploadBlock = append(c.inters.UploadBlock, interceptors...)
+}
+
+// Create returns a builder for creating a UploadBlock entity.
+func (c *UploadBlockClient) Create() *UploadBlockCreate {
+	mutation := newUploadBlockMutation(c.config, OpCreate)
+	return &UploadBlockCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UploadBlock entities.
+func (c *UploadBlockClient) CreateBulk(builders ...*UploadBlockCreate) *UploadBlockCreateBulk {
+	return &UploadBlockCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UploadBlockClient) MapCreateBulk(slice any, setFunc func(*UploadBlockCreate, int)) *UploadBlockCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UploadBlockCreateBulk{err: fmt.Errorf("calling to UploadBlockClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UploadBlockCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UploadBlockCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UploadBlock.
+func (c *UploadBlockClient) Update() *UploadBlockUpdate {
+	mutation := newUploadBlockMutation(c.config, OpUpdate)
+	return &UploadBlockUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UploadBlockClient) UpdateOne(_m *UploadBlock) *UploadBlockUpdateOne {
+	mutation := newUploadBlockMutation(c.config, OpUpdateOne, withUploadBlock(_m))
+	return &UploadBlockUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UploadBlockClient) UpdateOneID(id int) *UploadBlockUpdateOne {
+	mutation := newUploadBlockMutation(c.config, OpUpdateOne, withUploadBlockID(id))
+	return &UploadBlockUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UploadBlock.
+func (c *UploadBlockClient) Delete() *UploadBlockDelete {
+	mutation := newUploadBlockMutation(c.config, OpDelete)
+	return &UploadBlockDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UploadBlockClient) DeleteOne(_m *UploadBlock) *UploadBlockDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UploadBlockClient) DeleteOneID(id int) *UploadBlockDeleteOne {
+	builder := c.Delete().Where(uploadblock.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UploadBlockDeleteOne{builder}
+}
+
+// Query returns a query builder for UploadBlock.
+func (c *UploadBlockClient) Query() *UploadBlockQuery {
+	return &UploadBlockQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUploadBlock},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UploadBlock entity by its id.
+func (c *UploadBlockClient) Get(ctx context.Context, id int) (*UploadBlock, error) {
+	return c.Query().Where(uploadblock.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UploadBlockClient) GetX(ctx context.Context, id int) *UploadBlock {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUpload queries the upload edge of a UploadBlock.
+func (c *UploadBlockClient) QueryUpload(_m *UploadBlock) *UploadQuery {
+	query := (&UploadClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(uploadblock.Table, uploadblock.FieldID, id),
+			sqlgraph.To(upload.Table, upload.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, uploadblock.UploadTable, uploadblock.UploadColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UploadBlockClient) Hooks() []Hook {
+	return c.hooks.UploadBlock
+}
+
+// Interceptors returns the client interceptors.
+func (c *UploadBlockClient) Interceptors() []Interceptor {
+	return c.inters.UploadBlock
+}
+
+func (c *UploadBlockClient) mutate(ctx context.Context, m *UploadBlockMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UploadBlockCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UploadBlockUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UploadBlockUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UploadBlockDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UploadBlock mutation op: %q", m.Op())
+	}
+}
+
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CacheEntry, JobLock, StorageDeletion, StorageLocation, StorageReaderLease,
-		Upload []ent.Hook
+		CacheEntry, JobLock, StorageDeletion, StorageLocation, StorageManifest,
+		StorageReaderLease, Upload, UploadBlock []ent.Hook
 	}
 	inters struct {
-		CacheEntry, JobLock, StorageDeletion, StorageLocation, StorageReaderLease,
-		Upload []ent.Interceptor
+		CacheEntry, JobLock, StorageDeletion, StorageLocation, StorageManifest,
+		StorageReaderLease, Upload, UploadBlock []ent.Interceptor
 	}
 )
 

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/NCUnix/GitHubActionCacheServer/internal/blockmanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storagelifecycle"
+	"github.com/google/uuid"
 )
 
 func (s *Service) DownloadRanged(ctx context.Context, cacheEntryID string, ranges []ByteRange) (*DownloadStream, error) {
@@ -34,29 +36,22 @@ func (s *Service) download(ctx context.Context, cacheEntryID string, ranges []By
 	}
 
 	var (
-		stream        io.ReadCloser
-		selected      *DownloadRange
-		totalLength   = contentLength(location.SizeBytes)
-		contentLength = totalLength
+		stream      io.ReadCloser
+		resolved    DownloadRange
+		totalLength = contentLength(location.SizeBytes)
 	)
 	if len(ranges) == 0 {
 		if lease.Scope == storagereaderlease.ScopeStorage {
 			stream, err = s.openMerged(ctx, location)
 		} else {
 			s.tryStartMaterialization(location, cacheEntryID)
-			stream, err = s.openParts(ctx, location)
+			stream, err = s.openParts(ctx, lease.ID, location)
 		}
 	} else if lease.Scope == storagereaderlease.ScopeStorage {
-		var resolved DownloadRange
 		stream, totalLength, resolved, err = s.openRangedMerged(ctx, location, ranges)
-		contentLength = resolved.Count
-		selected = &resolved
 	} else {
 		s.tryStartMaterialization(location, cacheEntryID)
-		var resolved DownloadRange
 		stream, totalLength, resolved, err = s.openRangedParts(ctx, lease.ID, location, ranges)
-		contentLength = resolved.Count
-		selected = &resolved
 	}
 	if err != nil {
 		s.releaseReaderLease(lease.ID)
@@ -68,13 +63,19 @@ func (s *Service) download(ctx context.Context, cacheEntryID string, ranges []By
 		}
 	}
 
+	responseLength := totalLength
+	var selected *DownloadRange
+	if len(ranges) != 0 {
+		responseLength = resolved.Count
+		selected = &resolved
+	}
 	s.touchStorageLocationIfStale(ctx, location)
 	return &DownloadStream{
 		ReadCloser:        newLeasedReadCloser(stream, s.lifecycle, lease, s.enqueueReaderLeaseRelease),
 		CacheEntryID:      cacheEntryID,
 		StorageLocationID: location.ID,
 		Representation:    representation,
-		ContentLength:     contentLength,
+		ContentLength:     responseLength,
 		TotalLength:       totalLength,
 		Range:             selected,
 	}, nil
@@ -105,7 +106,7 @@ func (s *Service) openRangedParts(ctx context.Context, leaseID string, location 
 		return nil, 0, selected, err
 	}
 	if location.PartCount == 1 {
-		objectName := partObjectName(location.FolderName, 0)
+		objectName := anchorObjectName(location)
 		total, err := s.objectSize(ctx, objectName, location.SizeBytes)
 		if err != nil {
 			return nil, 0, DownloadRange{}, err
@@ -150,17 +151,24 @@ func (s *Service) openRangedParts(ctx context.Context, leaseID string, location 
 	}
 
 	if delayed {
-		renewCtx, renewCancel := context.WithTimeout(ctx, mergeCleanupTimeout)
-		err = s.lifecycle.RenewReader(renewCtx, leaseID)
-		renewCancel()
-		if err != nil {
-			if errors.Is(err, storagelifecycle.ErrReaderLeaseLost) {
-				return nil, total, DownloadRange{}, ErrCacheNotFound
-			}
-			return nil, total, DownloadRange{}, fmt.Errorf("revalidate ranged cache reader lease: %w", err)
+		if err := s.revalidatePartReader(ctx, leaseID); err != nil {
+			return nil, total, DownloadRange{}, err
 		}
 	}
 	return newRangedPartsReadCloser(ctx, s.storage, location.FolderName, index, selected), total, selected, nil
+}
+
+func (s *Service) revalidatePartReader(ctx context.Context, leaseID string) error {
+	renewCtx, cancel := context.WithTimeout(ctx, mergeCleanupTimeout)
+	defer cancel()
+	err := s.lifecycle.RenewReader(renewCtx, leaseID)
+	if errors.Is(err, storagelifecycle.ErrReaderLeaseLost) {
+		return ErrCacheNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("revalidate cache part reader lease: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) cachedPartIndex(ctx context.Context, location *ent.StorageLocation) (*partIndex, bool, error) {
@@ -172,6 +180,20 @@ func (s *Service) cachedPartIndex(ctx context.Context, location *ent.StorageLoca
 	return s.partIndexes.getOrLoad(ctx, key, func(loadCtx context.Context) (*partIndex, error) {
 		discoveryCtx, cancel := context.WithTimeout(loadCtx, s.partIndexTimeout)
 		defer cancel()
+		if location.ManifestAnchor != nil {
+			parts, total, err := blockmanifest.ForLocation(discoveryCtx, s.db, location)
+			if err != nil {
+				return nil, err
+			}
+			index := &partIndex{ends: make([]int64, len(parts)), candidates: make([]uuid.UUID, len(parts)), total: total}
+			var end int64
+			for position, part := range parts {
+				end += part.Size
+				index.ends[position] = end
+				index.candidates[position] = part.Candidate
+			}
+			return index, nil
+		}
 		sizes, err := s.storage.InspectIndexedFolderSizes(discoveryCtx, partsFolderName(location.FolderName), location.PartCount)
 		if err != nil {
 			return nil, err
@@ -210,7 +232,7 @@ func (s *Service) DownloadMetadata(ctx context.Context, cacheEntryID string) (*D
 		representation = string(storagereaderlease.ScopeStorage)
 		objectName = mergedObjectName(location.FolderName)
 	} else if location.PartCount > 0 {
-		objectName = partObjectName(location.FolderName, 0)
+		objectName = anchorObjectName(location)
 	} else if location.PartCount < 0 {
 		return nil, &DownloadError{Err: fmt.Errorf("invalid finalized part count %d", location.PartCount), CacheEntryID: cacheEntryID, StorageLocationID: location.ID, Representation: representation}
 	}

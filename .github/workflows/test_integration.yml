@@ -138,6 +138,10 @@ jobs:
       - name: PostgreSQL integration tests through PgBouncer
         env:
           E2E_POSTGRES_URL: "postgres://cache:cache@127.0.0.1:6432/cache_test?sslmode=disable&default_query_exec_mode=exec"
+          E2E_S3_ENDPOINT_URL: http://127.0.0.1:9000
+          E2E_S3_BUCKET: cache-test
+          AWS_ACCESS_KEY_ID: rustfsadmin
+          AWS_SECRET_ACCESS_KEY: rustfsadmin
         run: go test ./e2e -run '^TestExternalPostgres' -count=1
 
       - name: MySQL 8.0 integration tests
@@ -147,4 +151,8 @@ jobs:
           E2E_MYSQL_DATABASE: cache_test
           E2E_MYSQL_USER: cache
           E2E_MYSQL_PASSWORD: cache
+          E2E_S3_ENDPOINT_URL: http://127.0.0.1:9000
+          E2E_S3_BUCKET: cache-test
+          AWS_ACCESS_KEY_ID: rustfsadmin
+          AWS_SECRET_ACCESS_KEY: rustfsadmin
         run: go test ./e2e -run '^TestExternalMySQL' -count=1

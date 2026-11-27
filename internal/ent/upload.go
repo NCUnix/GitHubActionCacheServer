@@ -8,6 +8,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
 )
 
@@ -37,8 +38,44 @@ type Upload struct {
 	// CommittedPartCount holds the value of the "committedPartCount" field.
 	CommittedPartCount *int `json:"committedPartCount,omitempty"`
 	// TupleHash holds the value of the "tupleHash" field.
-	TupleHash    *string `json:"tupleHash,omitempty"`
+	TupleHash *string `json:"tupleHash,omitempty"`
+	// BlockManifestVersion holds the value of the "blockManifestVersion" field.
+	BlockManifestVersion int64 `json:"blockManifestVersion,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the UploadQuery when eager-loading is set.
+	Edges        UploadEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// UploadEdges holds the relations/edges for other nodes in the graph.
+type UploadEdges struct {
+	// Blocks holds the value of the blocks edge.
+	Blocks []*UploadBlock `json:"blocks,omitempty"`
+	// Manifest holds the value of the manifest edge.
+	Manifest *StorageManifest `json:"manifest,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [2]bool
+}
+
+// BlocksOrErr returns the Blocks value or an error if the edge
+// was not loaded in eager-loading.
+func (e UploadEdges) BlocksOrErr() ([]*UploadBlock, error) {
+	if e.loadedTypes[0] {
+		return e.Blocks, nil
+	}
+	return nil, &NotLoadedError{edge: "blocks"}
+}
+
+// ManifestOrErr returns the Manifest value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UploadEdges) ManifestOrErr() (*StorageManifest, error) {
+	if e.Manifest != nil {
+		return e.Manifest, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: storagemanifest.Label}
+	}
+	return nil, &NotLoadedError{edge: "manifest"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -46,7 +83,7 @@ func (*Upload) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case upload.FieldID, upload.FieldCreatedAt, upload.FieldLastPartUploadedAt, upload.FieldStartedPartUploadCount, upload.FieldFinishedPartUploadCount, upload.FieldCommittedPartCount:
+		case upload.FieldID, upload.FieldCreatedAt, upload.FieldLastPartUploadedAt, upload.FieldStartedPartUploadCount, upload.FieldFinishedPartUploadCount, upload.FieldCommittedPartCount, upload.FieldBlockManifestVersion:
 			values[i] = new(sql.NullInt64)
 		case upload.FieldKey, upload.FieldVersion, upload.FieldScope, upload.FieldRepoId, upload.FieldFolderName, upload.FieldTupleHash:
 			values[i] = new(sql.NullString)
@@ -140,6 +177,12 @@ func (_m *Upload) assignValues(columns []string, values []any) error {
 				_m.TupleHash = new(string)
 				*_m.TupleHash = value.String
 			}
+		case upload.FieldBlockManifestVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field blockManifestVersion", values[i])
+			} else if value.Valid {
+				_m.BlockManifestVersion = value.Int64
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -151,6 +194,16 @@ func (_m *Upload) assignValues(columns []string, values []any) error {
 // This includes values selected through modifiers, order, etc.
 func (_m *Upload) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
+}
+
+// QueryBlocks queries the "blocks" edge of the Upload entity.
+func (_m *Upload) QueryBlocks() *UploadBlockQuery {
+	return NewUploadClient(_m.config).QueryBlocks(_m)
+}
+
+// QueryManifest queries the "manifest" edge of the Upload entity.
+func (_m *Upload) QueryManifest() *StorageManifestQuery {
+	return NewUploadClient(_m.config).QueryManifest(_m)
 }
 
 // Update returns a builder for updating this Upload.
@@ -214,6 +267,9 @@ func (_m *Upload) String() string {
 		builder.WriteString("tupleHash=")
 		builder.WriteString(*v)
 	}
+	builder.WriteString(", ")
+	builder.WriteString("blockManifestVersion=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BlockManifestVersion))
 	builder.WriteByte(')')
 	return builder.String()
 }

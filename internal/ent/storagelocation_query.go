@@ -16,6 +16,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagemanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 )
 
@@ -28,6 +29,7 @@ type StorageLocationQuery struct {
 	predicates       []predicate.StorageLocation
 	withCacheEntries *CacheEntryQuery
 	withReaderLeases *StorageReaderLeaseQuery
+	withManifest     *StorageManifestQuery
 	modifiers        []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -102,6 +104,28 @@ func (_q *StorageLocationQuery) QueryReaderLeases() *StorageReaderLeaseQuery {
 			sqlgraph.From(storagelocation.Table, storagelocation.FieldID, selector),
 			sqlgraph.To(storagereaderlease.Table, storagereaderlease.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, storagelocation.ReaderLeasesTable, storagelocation.ReaderLeasesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryManifest chains the current query on the "manifest" edge.
+func (_q *StorageLocationQuery) QueryManifest() *StorageManifestQuery {
+	query := (&StorageManifestClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(storagelocation.Table, storagelocation.FieldID, selector),
+			sqlgraph.To(storagemanifest.Table, storagemanifest.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, storagelocation.ManifestTable, storagelocation.ManifestColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -303,6 +327,7 @@ func (_q *StorageLocationQuery) Clone() *StorageLocationQuery {
 		predicates:       append([]predicate.StorageLocation{}, _q.predicates...),
 		withCacheEntries: _q.withCacheEntries.Clone(),
 		withReaderLeases: _q.withReaderLeases.Clone(),
+		withManifest:     _q.withManifest.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -328,6 +353,17 @@ func (_q *StorageLocationQuery) WithReaderLeases(opts ...func(*StorageReaderLeas
 		opt(query)
 	}
 	_q.withReaderLeases = query
+	return _q
+}
+
+// WithManifest tells the query-builder to eager-load the nodes that are connected to
+// the "manifest" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *StorageLocationQuery) WithManifest(opts ...func(*StorageManifestQuery)) *StorageLocationQuery {
+	query := (&StorageManifestClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withManifest = query
 	return _q
 }
 
@@ -409,9 +445,10 @@ func (_q *StorageLocationQuery) sqlAll(ctx context.Context, hooks ...queryHook) 
 	var (
 		nodes       = []*StorageLocation{}
 		_spec       = _q.querySpec()
-		loadedTypes = [2]bool{
+		loadedTypes = [3]bool{
 			_q.withCacheEntries != nil,
 			_q.withReaderLeases != nil,
+			_q.withManifest != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -448,6 +485,12 @@ func (_q *StorageLocationQuery) sqlAll(ctx context.Context, hooks ...queryHook) 
 			func(n *StorageLocation, e *StorageReaderLease) {
 				n.Edges.ReaderLeases = append(n.Edges.ReaderLeases, e)
 			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withManifest; query != nil {
+		if err := _q.loadManifest(ctx, query, nodes, nil,
+			func(n *StorageLocation, e *StorageManifest) { n.Edges.Manifest = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -509,6 +552,36 @@ func (_q *StorageLocationQuery) loadReaderLeases(ctx context.Context, query *Sto
 		node, ok := nodeids[fk]
 		if !ok {
 			return fmt.Errorf(`unexpected referenced foreign-key "storageLocationId" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *StorageLocationQuery) loadManifest(ctx context.Context, query *StorageManifestQuery, nodes []*StorageLocation, init func(*StorageLocation), assign func(*StorageLocation, *StorageManifest)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[string]*StorageLocation)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(storagemanifest.FieldLocationId)
+	}
+	query.Where(predicate.StorageManifest(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(storagelocation.ManifestColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.LocationId
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "locationId" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "locationId" returned %v for node %v`, *fk, n.ID)
 		}
 		assign(node, n)
 	}

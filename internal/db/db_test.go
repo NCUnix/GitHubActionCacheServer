@@ -453,14 +453,27 @@ func TestGeneratedSchemaMatchesOriginalColumns(t *testing.T) {
 		"id", "folderName", "createdAt", "attemptCount", "lastAttemptedAt", "lastError",
 	}, columnNames(migrate.StorageDeletionsColumns))
 	require.Equal(t, []string{
-		"id", "folderName", "partCount", "sizeBytes", "leaseVersion", "deletionRequestedAt", "mergeStartedAt", "mergeLeaseToken", "mergeLeaseExpiresAt", "mergedAt", "materializationUnsupportedAt", "partsDeletedAt", "lastDownloadedAt", "recencyAt",
+		"id", "folderName", "partCount", "sizeBytes", "leaseVersion", "deletionRequestedAt", "mergeStartedAt", "mergeLeaseToken", "mergeLeaseExpiresAt", "mergedAt", "materializationUnsupportedAt", "partsDeletedAt", "lastDownloadedAt", "recencyAt", "manifestAnchor",
 	}, columnNames(migrate.StorageLocationsColumns))
 	require.Equal(t, []string{
 		"id", "scope", "expiresAt", "storageLocationId",
 	}, columnNames(migrate.StorageReaderLeasesColumns))
 	require.Equal(t, []string{
-		"id", "key", "version", "scope", "repoId", "createdAt", "lastPartUploadedAt", "startedPartUploadCount", "finishedPartUploadCount", "folderName", "committedPartCount", "tupleHash",
+		"id", "key", "version", "scope", "repoId", "createdAt", "lastPartUploadedAt", "startedPartUploadCount", "finishedPartUploadCount", "folderName", "committedPartCount", "tupleHash", "blockManifestVersion",
 	}, columnNames(migrate.UploadsColumns))
+}
+
+func TestGeneratedManifestSchema(t *testing.T) {
+	require.Equal(t, "mediumblob", migrate.StorageManifestsColumns[1].SchemaType[dialect.MySQL])
+	require.Len(t, migrate.StorageManifestsTable.ForeignKeys, 2)
+	for _, foreignKey := range migrate.StorageManifestsTable.ForeignKeys {
+		require.Equal(t, entschema.Cascade, foreignKey.OnDelete)
+		require.True(t, foreignKey.Columns[0].Nullable)
+		require.True(t, foreignKey.Columns[0].Unique)
+	}
+	require.Len(t, migrate.UploadBlocksTable.ForeignKeys, 1)
+	require.Equal(t, entschema.Cascade, migrate.UploadBlocksTable.ForeignKeys[0].OnDelete)
+	require.True(t, migrate.UploadBlocksTable.Indexes[0].Unique)
 }
 
 func TestGeneratedSchemaMatchesOriginalStringTypes(t *testing.T) {

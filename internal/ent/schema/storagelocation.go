@@ -50,6 +50,7 @@ func (StorageLocation) Fields() []ent.Field {
 		// touch alongside lastDownloadedAt. Relies on one cache entry per location
 		// and entry.updatedAt being immutable after attach.
 		field.Int64("recencyAt").Default(0).NonNegative().StorageKey("recencyAt"),
+		field.String("manifestAnchor").Optional().Nillable().Immutable().StorageKey("manifestAnchor").SchemaType(originalIDColumnType),
 	}
 }
 
@@ -59,6 +60,7 @@ func (StorageLocation) Edges() []ent.Edge {
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("readerLeases", StorageReaderLease.Type).
 			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("manifest", StorageManifest.Type).Unique().Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 

@@ -131,6 +131,7 @@ var (
 		{Name: "partsDeletedAt", Type: field.TypeInt64, Nullable: true},
 		{Name: "lastDownloadedAt", Type: field.TypeInt64, Nullable: true},
 		{Name: "recencyAt", Type: field.TypeInt64, Default: 0},
+		{Name: "manifestAnchor", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"mysql": "varchar(36)", "postgres": "text", "sqlite3": "text"}},
 	}
 	// StorageLocationsTable holds the schema information for the "storage_locations" table.
 	StorageLocationsTable = &schema.Table{
@@ -155,6 +156,41 @@ var (
 				Name:    "idx_storage_locations_recency",
 				Unique:  false,
 				Columns: []*schema.Column{StorageLocationsColumns[13], StorageLocationsColumns[0]},
+			},
+		},
+	}
+	// StorageManifestsColumns holds the columns for the "storage_manifests" table.
+	StorageManifestsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "parts", Type: field.TypeBytes, SchemaType: map[string]string{"mysql": "mediumblob"}},
+		{Name: "candidateGCAt", Type: field.TypeInt64, Nullable: true},
+		{Name: "locationId", Type: field.TypeString, Unique: true, Nullable: true, SchemaType: map[string]string{"mysql": "varchar(36)", "postgres": "text", "sqlite3": "text"}},
+		{Name: "uploadId", Type: field.TypeInt64, Unique: true, Nullable: true},
+	}
+	// StorageManifestsTable holds the schema information for the "storage_manifests" table.
+	StorageManifestsTable = &schema.Table{
+		Name:       "storage_manifests",
+		Columns:    StorageManifestsColumns,
+		PrimaryKey: []*schema.Column{StorageManifestsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "storage_manifests_storage_locations_manifest",
+				Columns:    []*schema.Column{StorageManifestsColumns[3]},
+				RefColumns: []*schema.Column{StorageLocationsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "storage_manifests_uploads_manifest",
+				Columns:    []*schema.Column{StorageManifestsColumns[4]},
+				RefColumns: []*schema.Column{UploadsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "storagemanifest_candidateGCAt_id",
+				Unique:  false,
+				Columns: []*schema.Column{StorageManifestsColumns[2], StorageManifestsColumns[0]},
 			},
 		},
 	}
@@ -200,6 +236,7 @@ var (
 		{Name: "folderName", Type: field.TypeString, SchemaType: map[string]string{"mysql": "text", "postgres": "text", "sqlite3": "text"}},
 		{Name: "committedPartCount", Type: field.TypeInt, Nullable: true},
 		{Name: "tupleHash", Type: field.TypeString, Nullable: true, Size: 64, SchemaType: map[string]string{"mysql": "varchar(64)", "postgres": "text", "sqlite3": "text"}},
+		{Name: "blockManifestVersion", Type: field.TypeInt64, Default: 0},
 	}
 	// UploadsTable holds the schema information for the "uploads" table.
 	UploadsTable = &schema.Table{
@@ -242,14 +279,45 @@ var (
 			},
 		},
 	}
+	// UploadBlocksColumns holds the columns for the "upload_blocks" table.
+	UploadBlocksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt, Increment: true},
+		{Name: "blockHash", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(64)", "postgres": "text", "sqlite3": "text"}},
+		{Name: "candidateId", Type: field.TypeString, SchemaType: map[string]string{"mysql": "varchar(36)", "postgres": "text", "sqlite3": "text"}},
+		{Name: "sizeBytes", Type: field.TypeInt64},
+		{Name: "uploadId", Type: field.TypeInt64},
+	}
+	// UploadBlocksTable holds the schema information for the "upload_blocks" table.
+	UploadBlocksTable = &schema.Table{
+		Name:       "upload_blocks",
+		Columns:    UploadBlocksColumns,
+		PrimaryKey: []*schema.Column{UploadBlocksColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "upload_blocks_uploads_blocks",
+				Columns:    []*schema.Column{UploadBlocksColumns[4]},
+				RefColumns: []*schema.Column{UploadsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "uploadblock_uploadId_blockHash",
+				Unique:  true,
+				Columns: []*schema.Column{UploadBlocksColumns[4], UploadBlocksColumns[1]},
+			},
+		},
+	}
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		CacheEntriesTable,
 		JobLocksTable,
 		StorageDeletionsTable,
 		StorageLocationsTable,
+		StorageManifestsTable,
 		StorageReaderLeasesTable,
 		UploadsTable,
+		UploadBlocksTable,
 	}
 )
 
@@ -267,11 +335,20 @@ func init() {
 	StorageLocationsTable.Annotation = &entsql.Annotation{
 		Table: "storage_locations",
 	}
+	StorageManifestsTable.ForeignKeys[0].RefTable = StorageLocationsTable
+	StorageManifestsTable.ForeignKeys[1].RefTable = UploadsTable
+	StorageManifestsTable.Annotation = &entsql.Annotation{
+		Table: "storage_manifests",
+	}
 	StorageReaderLeasesTable.ForeignKeys[0].RefTable = StorageLocationsTable
 	StorageReaderLeasesTable.Annotation = &entsql.Annotation{
 		Table: "storage_reader_leases",
 	}
 	UploadsTable.Annotation = &entsql.Annotation{
 		Table: "uploads",
+	}
+	UploadBlocksTable.ForeignKeys[0].RefTable = UploadsTable
+	UploadBlocksTable.Annotation = &entsql.Annotation{
+		Table: "upload_blocks",
 	}
 }

@@ -18,7 +18,7 @@ func TestPartsReadCloserCanCloseWhileReading(t *testing.T) {
 			return stream, nil
 		},
 	}
-	reader := newPartsReadCloser(context.Background(), adapter, "folder", 1)
+	reader := newPartsReadCloser(context.Background(), adapter, "folder", 1, nil)
 
 	readDone := make(chan error, 1)
 	go func() {
@@ -45,7 +45,7 @@ func TestPartsReadCloserClosesStreamOpenedDuringClose(t *testing.T) {
 			return stream, nil
 		},
 	}
-	reader := newPartsReadCloser(context.Background(), adapter, "folder", 1)
+	reader := newPartsReadCloser(context.Background(), adapter, "folder", 1, nil)
 
 	readDone := make(chan error, 1)
 	go func() {
