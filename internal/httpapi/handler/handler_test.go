@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/testutil"
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,20 @@ func TestCacheErrorWritersShareClassification(t *testing.T) {
 			require.Len(t, twirpContext.Errors.ByType(gin.ErrorTypePrivate), wantPrivateErrors)
 		})
 	}
+}
+
+func TestReadyReportsUnavailableDatabase(t *testing.T) {
+	_, client := testutil.NewSQLiteClient(t)
+	handler := New(Options{DB: client})
+	require.NoError(t, client.Close())
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	handler.Ready(c)
+
+	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+	require.Equal(t, "database unavailable", recorder.Body.String())
 }
 
 func newCacheErrorTestContext() (*httptest.ResponseRecorder, *gin.Context) {

@@ -36,6 +36,7 @@ func TestHealthRoutes(t *testing.T) {
 	}{
 		{name: "root", path: "/", body: "OK"},
 		{name: "health", path: "/health", body: "healthy"},
+		{name: "readyz", path: "/readyz", body: "ready"},
 	}
 
 	for _, tt := range tests {

@@ -72,6 +72,7 @@ func NewRouter(logger zerolog.Logger, cfg config.Config, deps Dependencies) http
 
 	router.GET("/", handler.Root)
 	router.GET("/health", handler.Health)
+	router.GET("/readyz", handlers.Ready)
 	router.GET("/metrics", gin.WrapH(metricsRegistry.Handler()))
 
 	cacheService := router.Group(

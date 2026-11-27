@@ -41,7 +41,12 @@ The server listens on `:3000` by default. Health checks:
 ```sh
 curl http://localhost:3000/
 curl http://localhost:3000/health
+curl http://localhost:3000/readyz
 ```
+
+`/health` only reports that the process is serving; `/readyz` returns 503 while
+the database is unreachable. Use `/health` for liveness and `/readyz` for
+readiness probes.
 
 For local protocol tests only, `SKIP_TOKEN_VALIDATION=true` can be used to accept
 unsigned or test JWTs. Do not use it for production. Combined with

@@ -163,6 +163,13 @@ func PlainOK(body string) TextResponse {
 	}
 }
 
+func PlainUnavailable(body string) TextResponse {
+	return textResponse{
+		status: http.StatusServiceUnavailable,
+		body:   body,
+	}
+}
+
 func CacheMiss() JSONResponse[EmptyPayload] {
 	return jsonResponse[EmptyPayload]{
 		status:  http.StatusOK,
