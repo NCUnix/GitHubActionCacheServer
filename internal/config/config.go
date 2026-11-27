@@ -193,6 +193,15 @@ func Load() (Config, error) {
 				"or set UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION=true for local testing only",
 		)
 	}
+	dbDriver := tools.EnvOrDefault("DB_DRIVER", "sqlite")
+	downloadURLSigningSecret := tools.EnvOrDefault("DOWNLOAD_URL_SIGNING_SECRET", "")
+	if (dbDriver == "postgres" || dbDriver == "mysql") && downloadURLSigningSecret == "" {
+		return Config{}, fmt.Errorf(
+			"DOWNLOAD_URL_SIGNING_SECRET is required with DB_DRIVER=%s so that URLs signed by one replica "+
+				"verify on the others; set the same value on every replica",
+			dbDriver,
+		)
+	}
 
 	return Config{
 		Server: ServerConfig{
@@ -208,7 +217,7 @@ func Load() (Config, error) {
 			SkipTokenValidation: skipTokenValidation,
 		},
 		DB: DBConfig{
-			Driver: tools.EnvOrDefault("DB_DRIVER", "sqlite"),
+			Driver: dbDriver,
 
 			SQLitePath: tools.EnvOrDefault("DB_SQLITE_PATH", ".data/sqlite.db"),
 
@@ -244,7 +253,7 @@ func Load() (Config, error) {
 		Cache: CacheConfig{
 			EnableDirectDownloads:     enableDirectDownloads,
 			DirectDownloadURLTTL:      directDownloadURLTTL,
-			DownloadURLSigningSecret:  tools.EnvOrDefault("DOWNLOAD_URL_SIGNING_SECRET", ""),
+			DownloadURLSigningSecret:  downloadURLSigningSecret,
 			MergeConcurrency:          positiveIntEnv("CACHE_MERGE_CONCURRENCY", defaultMergeConcurrency()),
 			MaxSizeBytes:              cacheMaxSizeBytes,
 			MaxSizeBytesConfigured:    cacheMaxSizeBytesConfigured,

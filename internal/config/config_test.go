@@ -501,3 +501,36 @@ func TestLoadDirectDownloadsWithSkippedTokenValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadRequiresSigningSecretForSharedDatabases(t *testing.T) {
+	tests := []struct {
+		name    string
+		driver  string
+		secret  string
+		wantErr bool
+	}{
+		{name: "postgres without secret", driver: "postgres", wantErr: true},
+		{name: "mysql without secret", driver: "mysql", wantErr: true},
+		{name: "postgres with secret", driver: "postgres", secret: "secret"},
+		{name: "sqlite without secret", driver: "sqlite"},
+		{name: "default driver without secret"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DB_DRIVER", tt.driver)
+			t.Setenv("DOWNLOAD_URL_SIGNING_SECRET", tt.secret)
+
+			cfg, err := Load()
+
+			if tt.wantErr {
+				require.Zero(t, cfg)
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "DOWNLOAD_URL_SIGNING_SECRET")
+				require.Contains(t, err.Error(), "DB_DRIVER="+tt.driver)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.secret, cfg.Cache.DownloadURLSigningSecret)
+		})
+	}
+}
