@@ -16,6 +16,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cleanup"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dbclock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/metrics"
@@ -62,13 +63,18 @@ func main() {
 			logger.Error().Err(err).Msg("database close failed")
 		}
 	}()
+	clock := dbclock.New(dbClient, cfg.DB.Driver, logger)
+	if err := clock.Sync(context.Background()); err != nil {
+		logger.Fatal().Err(err).Msg("database clock sync failed")
+	}
+	logger.Info().Dur("offset", clock.Offset()).Msg("database clock synchronized")
 
 	storageAdapter, err := storage.NewAdapter(context.Background(), cfg.Storage)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("storage initialization failed")
 	}
 	metricsRegistry := metrics.New(dbClient)
-	lifecycleService := storagelifecycle.NewWithOptions(dbClient, storagelifecycle.Options{DirectDownloadURLTTL: cfg.Cache.DirectDownloadURLTTL})
+	lifecycleService := storagelifecycle.NewWithOptions(dbClient, storagelifecycle.Options{DirectDownloadURLTTL: cfg.Cache.DirectDownloadURLTTL, Now: clock.Now})
 	var jobLocker *dblock.Locker
 	// SQLite is single-instance, and a held lock transaction would occupy its only connection and deadlock.
 	if cfg.DB.Driver != db.DriverSQLite {
@@ -90,6 +96,7 @@ func main() {
 		Lifecycle:             lifecycleService,
 		Logger:                &logger,
 		Capacity:              capacityService,
+		Now:                   clock.Now,
 	})
 
 	backgroundCtx, backgroundCancel := context.WithCancel(context.Background())
@@ -112,6 +119,9 @@ func main() {
 	storageSizeReady := make(chan struct{})
 	var backgroundServices sync.WaitGroup
 	backgroundServices.Go(func() {
+		clock.Run(backgroundCtx)
+	})
+	backgroundServices.Go(func() {
 		storagereconcile.Run(backgroundCtx, storagereconcile.Options{
 			DB:        dbClient,
 			Storage:   storageAdapter,
@@ -130,6 +140,7 @@ func main() {
 		Locker:    jobLocker,
 		Logger:    &logger,
 		Metrics:   metricsRegistry,
+		Now:       clock.Now,
 	}), logger, storageSizeReady)
 	backgroundServices.Go(func() {
 		cleanupRunner.Run(backgroundCtx)

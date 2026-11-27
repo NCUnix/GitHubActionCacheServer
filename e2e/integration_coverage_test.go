@@ -19,6 +19,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cleanup"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dbclock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
@@ -33,6 +34,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 	"github.com/go-sql-driver/mysql"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -398,6 +400,33 @@ func TestExternalMySQLCleanupRetention(t *testing.T) {
 	runExternalCleanupRetention(t, dbCfg)
 }
 
+func TestExternalPostgresDatabaseClockSync(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
+	if !ok {
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
+	}
+
+	runExternalDatabaseClockSync(t, dbCfg)
+}
+
+func TestExternalPgBouncerDatabaseClockSync(t *testing.T) {
+	dbCfg, ok := externalPgBouncerConfig()
+	if !ok {
+		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer integration coverage")
+	}
+
+	runExternalDatabaseClockSync(t, dbCfg)
+}
+
+func TestExternalMySQLDatabaseClockSync(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL integration coverage")
+	}
+
+	runExternalDatabaseClockSync(t, dbCfg)
+}
+
 func TestExternalS3SaveAndRestore(t *testing.T) {
 	storageCfg, ok := externalS3Config()
 	if !ok {
@@ -694,6 +723,17 @@ func runExternalJobLockExclusion(t *testing.T, cfg config.DBConfig) {
 	require.NoError(t, err)
 	require.NotNil(t, reacquired)
 	require.NoError(t, reacquired.Release())
+}
+
+func runExternalDatabaseClockSync(t *testing.T, cfg config.DBConfig) {
+	t.Helper()
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, cfg)
+	clock := dbclock.New(client, cfg.Driver, zerolog.Nop())
+
+	require.NoError(t, clock.Sync(ctx))
+	require.WithinDuration(t, time.Now(), clock.Now(), 2*time.Second)
 }
 
 func runExternalPostgresJobLockLoss(t *testing.T, cfg config.DBConfig) {

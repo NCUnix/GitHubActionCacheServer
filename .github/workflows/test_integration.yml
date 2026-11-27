@@ -119,4 +119,4 @@ jobs:
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
           AWS_EC2_METADATA_DISABLED: "true"
-        run: go test ./e2e -run 'TestExternal((Postgres|MySQL)(FilesystemSaveAndRestore|CacheKeyMatching|CleanupRetention|StorageSizeMigration|CapacityEviction|CapacityEvictionSkipsWhileLocked|SchemaMigrationSerialization)|(Postgres|PgBouncer|MySQL)JobLockExclusion|(Postgres|PgBouncer)JobLockLoss|MySQLSchemaMigrationRunsOnLockSession|PostgresSchemaMigrationCommitsDDLBeforeBackfill|PgBouncerSchemaMigrationSerialization|S3SaveAndRestore)' -count=1
+        run: go test ./e2e -run 'TestExternal((Postgres|MySQL)(FilesystemSaveAndRestore|CacheKeyMatching|CleanupRetention|StorageSizeMigration|CapacityEviction|CapacityEvictionSkipsWhileLocked|SchemaMigrationSerialization)|(Postgres|PgBouncer|MySQL)(JobLockExclusion|DatabaseClockSync)|(Postgres|PgBouncer)JobLockLoss|MySQLSchemaMigrationRunsOnLockSession|PostgresSchemaMigrationCommitsDDLBeforeBackfill|PgBouncerSchemaMigrationSerialization|S3SaveAndRestore)' -count=1

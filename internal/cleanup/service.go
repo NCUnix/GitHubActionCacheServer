@@ -200,7 +200,7 @@ func (s *Service) RunStorageLocations(ctx context.Context) (int, error) {
 }
 
 func (s *Service) RunParts(ctx context.Context) (int, error) {
-	cutoff := time.Now().Add(-materializedPartsRetention).UnixMilli()
+	cutoff := s.now().Add(-materializedPartsRetention).UnixMilli()
 	deletedParts := 0
 	cursor := ""
 
@@ -288,7 +288,7 @@ func (s *Service) RunStorageDeletions(ctx context.Context) (int, error) {
 	deleted := 0
 	var cursor int64
 	var processErrors []error
-	now := time.Now()
+	now := s.now()
 	minimumRetryCutoff := now.Add(-storageDeletionRetryBase).UnixMilli()
 
 	for {
