@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cleanup"
@@ -362,6 +364,33 @@ func TestExternalPostgresJobLockLoss(t *testing.T) {
 	}
 
 	runExternalPostgresJobLockLoss(t, dbCfg)
+}
+
+func TestExternalMySQLJobLockLoss(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL integration coverage")
+	}
+
+	runExternalMySQLJobLockLoss(t, dbCfg)
+}
+
+func TestExternalPostgresJobClaimRun(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
+	if !ok {
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
+	}
+
+	runExternalJobClaimRun(t, dbCfg)
+}
+
+func TestExternalMySQLJobClaimRun(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL integration coverage")
+	}
+
+	runExternalJobClaimRun(t, dbCfg)
 }
 
 func TestExternalPostgresCleanupRetention(t *testing.T) {
@@ -752,6 +781,106 @@ func runExternalPostgresJobLockLoss(t *testing.T, cfg config.DBConfig) {
 	require.NoError(t, err)
 	require.NotNil(t, reacquired)
 	require.NoError(t, reacquired.Release())
+}
+
+func runExternalMySQLJobLockLoss(t *testing.T, cfg config.DBConfig) {
+	t.Helper()
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, cfg)
+	sqlDB := openExternalSQLDB(t, ctx, cfg)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	// A single pooled connection makes the lock transaction run on the connection id read here.
+	holderDB := openExternalSQLDB(t, ctx, cfg)
+	holderDB.SetMaxOpenConns(1)
+	holderClient := ent.NewClient(ent.Driver(entsql.OpenDB(dialect.MySQL, holderDB)))
+	t.Cleanup(func() { _ = holderClient.Close() })
+	var holderID int64
+	require.NoError(t, holderDB.QueryRowContext(ctx, "select connection_id()").Scan(&holderID))
+	name := uniqueIntegrationCacheKey("job-lock-loss")
+
+	held, err := dblock.New(holderClient).TryAcquire(ctx, name)
+	require.NoError(t, err)
+	require.NotNil(t, held)
+	requireExternalRowsEventually(t, ctx, sqlDB, "job lock holder connection is not idle in its transaction",
+		"select count(*) from information_schema.processlist where id = ? and command = 'Sleep'", holderID)
+
+	// KILL takes no placeholder; holderID is an integer the server returned.
+	_, err = sqlDB.ExecContext(ctx, fmt.Sprintf("KILL %d", holderID))
+	require.NoError(t, err)
+	require.Error(t, held.Check(ctx))
+	_ = held.Release()
+
+	locker := dblock.New(client)
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		reacquired, err := locker.TryAcquire(ctx, name)
+		require.NoError(t, err)
+		if reacquired != nil {
+			require.NoError(t, reacquired.Release())
+			return
+		}
+		if time.Now().After(deadline) {
+			require.FailNow(t, "killed job lock connection did not release the lock")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func runExternalJobClaimRun(t *testing.T, cfg config.DBConfig) {
+	t.Helper()
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, cfg)
+	const interval = 24 * time.Hour
+	start := time.UnixMilli(1_700_000_000_000)
+	name := uniqueIntegrationCacheKey("job-claim")
+	replica := dblock.New(client)
+	otherReplica := dblock.New(client)
+
+	steps := []struct {
+		name   string
+		locker *dblock.Locker
+		now    time.Time
+		want   bool
+	}{
+		{name: "first run creates the row", locker: replica, now: start, want: true},
+		{name: "run within interval is skipped", locker: replica, now: start.Add(time.Hour), want: false},
+		{name: "run at interval boundary is claimed", locker: replica, now: start.Add(interval), want: true},
+		{name: "other replica in the claimed interval is skipped", locker: otherReplica, now: start.Add(interval + time.Minute), want: false},
+	}
+	for _, step := range steps {
+		claimed, err := step.locker.ClaimRun(ctx, name, step.now, interval)
+		require.NoError(t, err, step.name)
+		require.Equal(t, step.want, claimed, step.name)
+	}
+
+	type claimResult struct {
+		claimed bool
+		err     error
+	}
+	const replicas = 16
+	raceName := uniqueIntegrationCacheKey("job-claim-race")
+	release := make(chan struct{})
+	results := make(chan claimResult, replicas)
+	for range replicas {
+		locker := dblock.New(client)
+		go func() {
+			<-release
+			claimed, err := locker.ClaimRun(ctx, raceName, start, interval)
+			results <- claimResult{claimed: claimed, err: err}
+		}()
+	}
+	close(release)
+	claims := 0
+	for range replicas {
+		result := <-results
+		require.NoError(t, result.err)
+		if result.claimed {
+			claims++
+		}
+	}
+	require.Equal(t, 1, claims)
 }
 
 func createExternalCapacityLocation(ctx context.Context, client *ent.Client, id string, updatedAt int64, lastDownloadedAt *int64) *ent.StorageLocation {

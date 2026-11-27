@@ -38,6 +38,21 @@ jobs:
           --health-timeout 5s
           --health-retries 30
 
+      mysql-8-0:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: cache_test
+          MYSQL_USER: cache
+          MYSQL_PASSWORD: cache
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u cache --password=cache"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -124,3 +139,12 @@ jobs:
         env:
           E2E_POSTGRES_URL: "postgres://cache:cache@127.0.0.1:6432/cache_test?sslmode=disable&default_query_exec_mode=exec"
         run: go test ./e2e -run '^TestExternalPostgres' -count=1
+
+      - name: MySQL 8.0 integration tests
+        env:
+          E2E_MYSQL_HOST: 127.0.0.1
+          E2E_MYSQL_PORT: "3307"
+          E2E_MYSQL_DATABASE: cache_test
+          E2E_MYSQL_USER: cache
+          E2E_MYSQL_PASSWORD: cache
+        run: go test ./e2e -run '^TestExternalMySQL' -count=1
