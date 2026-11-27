@@ -453,10 +453,15 @@ func (c *BlockListCommit) Commit(ctx context.Context, blockIDs []string) error {
 	}); err != nil {
 		return err
 	}
-	if err := c.service.db.Upload.UpdateOneID(c.upload.ID).
+	affected, err := c.service.db.Upload.Update().
+		Where(upload.ID(c.upload.ID)).
 		SetCommittedPartCount(len(blockIDs)).
-		Exec(ctx); err != nil {
+		Save(ctx)
+	if err != nil {
 		return wrapUploadRowError("record committed block list", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("record committed block list: %w", ErrUploadNotFound)
 	}
 
 	return nil
@@ -824,14 +829,19 @@ func (s *Service) uploadObject(ctx context.Context, currentUpload *ent.Upload, o
 		return err
 	}
 
-	update := s.db.Upload.UpdateOneID(currentUpload.ID).
+	update := s.db.Upload.Update().
+		Where(upload.ID(currentUpload.ID)).
 		SetLastPartUploadedAt(s.now().UnixMilli()).
 		AddFinishedPartUploadCount(1)
 	if committedPartCount != nil {
 		update.SetCommittedPartCount(*committedPartCount)
 	}
-	if err := update.Exec(ctx); err != nil {
+	affected, err := update.Save(ctx)
+	if err != nil {
 		return wrapUploadRowError("mark upload finished", err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("mark upload finished: %w", ErrUploadNotFound)
 	}
 
 	return nil

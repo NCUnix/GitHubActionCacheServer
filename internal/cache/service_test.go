@@ -87,6 +87,41 @@ func TestCommitBlockListCopiesBlocksInDeclaredOrderAndCanRetry(t *testing.T) {
 	require.Equal(t, "hello ", readStorageObject(t, ctx, filesystem, blockObjectName(currentUpload.FolderName, "first")))
 }
 
+func TestLegacyUploadWritesDoNotReadBack(t *testing.T) {
+	ctx, client, log := testutil.NewRecordingSQLiteClient(t)
+	service := newTestService(t, Options{
+		DB:                      client,
+		Storage:                 testutil.NewFilesystemAdapter(t),
+		UploadHeartbeatInterval: time.Hour,
+	})
+	upload, err := service.CreateUpload(ctx, "key", "version", writableScope())
+	require.NoError(t, err)
+
+	for _, operation := range []struct {
+		name  string
+		run   func() error
+		field string
+	}{
+		{"block PUT", func() error {
+			return service.UploadBlock(ctx, upload.UploadID, "block", bytes.NewBufferString("data"))
+		}, "finishedPartUploadCount"},
+		{"blocklist commit", func() error {
+			return service.CommitBlockList(ctx, upload.UploadID, []string{"block"})
+		}, "committedPartCount"},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			log.Reset()
+			require.NoError(t, operation.run())
+			statements := log.Lines()
+			require.Len(t, statements, 3)
+			require.Contains(t, statements[0], "query=SELECT ")
+			require.Contains(t, statements[1], "query=UPDATE `uploads` SET `lastPartUploadedAt`")
+			require.Contains(t, statements[2], "query=UPDATE `uploads` SET ")
+			require.Contains(t, statements[2], "`"+operation.field+"`")
+		})
+	}
+}
+
 func TestCommitBlockListReportsMissingBlock(t *testing.T) {
 	ctx, client, filesystem := newTestServiceDeps(t)
 	service := newTestService(t, Options{DB: client, Storage: filesystem})

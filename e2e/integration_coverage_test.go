@@ -96,6 +96,9 @@ func TestExternalMySQLUploadBlocksAtSameTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, service.UploadBlock(ctx, reservation.UploadID, "first", strings.NewReader("first")))
 	require.NoError(t, service.UploadBlock(ctx, reservation.UploadID, "second", strings.NewReader("second")))
+	blockIDs := []string{"first", "second"}
+	require.NoError(t, service.CommitBlockList(ctx, reservation.UploadID, blockIDs))
+	require.NoError(t, service.CommitBlockList(ctx, reservation.UploadID, blockIDs))
 }
 
 func TestExternalPostgresReaderLeaseForeignKeyIsClassified(t *testing.T) {
