@@ -95,6 +95,7 @@ type StorageConfig struct {
 	S3ForcePathStyle bool
 	S3KeyPrefix      string
 
+	S3DisableStreamingUploads       bool
 	S3UploadPartSizeBytes           int64
 	S3UploadPartSizeBytesConfigured bool
 	S3UploadConcurrency             int
@@ -245,6 +246,7 @@ func Load() (Config, error) {
 			S3EndpointURL:                   tools.EnvOrDefault("AWS_ENDPOINT_URL", ""),
 			S3ForcePathStyle:                tools.ParseBool(tools.EnvOrDefault("STORAGE_S3_FORCE_PATH_STYLE", "true")),
 			S3KeyPrefix:                     tools.EnvOrDefault("STORAGE_S3_KEY_PREFIX", DefaultS3KeyPrefix),
+			S3DisableStreamingUploads:       tools.ParseBool(tools.EnvOrDefault("STORAGE_S3_DISABLE_STREAMING_UPLOADS", "false")),
 			S3UploadPartSizeBytes:           s3UploadPartSizeBytes,
 			S3UploadPartSizeBytesConfigured: s3UploadPartSizeBytesConfigured,
 			S3UploadConcurrency:             positiveIntEnv("STORAGE_S3_UPLOAD_CONCURRENCY", DefaultS3UploadConcurrency),

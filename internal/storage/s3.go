@@ -16,6 +16,7 @@ import (
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -24,6 +25,7 @@ import (
 )
 
 const (
+	s3MaxSingleUploadSize    int64 = 5 * 1024 * 1024 * 1024
 	s3MinimumComposePartSize int64 = 5 * 1024 * 1024
 	s3MaximumComposePartSize int64 = 5 * 1024 * 1024 * 1024
 	s3MaximumComposeParts          = 10_000
@@ -79,9 +81,10 @@ type S3Adapter struct {
 	bucket    string
 	keyPrefix string
 
-	uploadPartSizeBytes   int64
-	uploadConcurrency     int
-	multipartAbortTimeout time.Duration
+	disableStreamingUploads bool
+	uploadPartSizeBytes     int64
+	uploadConcurrency       int
+	multipartAbortTimeout   time.Duration
 }
 
 func NewS3Adapter(ctx context.Context, cfg config.StorageConfig) (*S3Adapter, error) {
@@ -123,18 +126,35 @@ func NewS3Adapter(ctx context.Context, cfg config.StorageConfig) (*S3Adapter, er
 	}
 
 	return &S3Adapter{
-		client:                client,
-		presign:               s3.NewPresignClient(client),
-		transfer:              newS3TransferManager(client, uploadPartSizeBytes, uploadConcurrency),
-		bucket:                cfg.S3Bucket,
-		keyPrefix:             keyPrefix,
-		uploadPartSizeBytes:   uploadPartSizeBytes,
-		uploadConcurrency:     uploadConcurrency,
-		multipartAbortTimeout: multipartAbortTimeout,
+		client:                  client,
+		presign:                 s3.NewPresignClient(client),
+		transfer:                newS3TransferManager(client, uploadPartSizeBytes, uploadConcurrency),
+		bucket:                  cfg.S3Bucket,
+		keyPrefix:               keyPrefix,
+		disableStreamingUploads: cfg.S3DisableStreamingUploads,
+		uploadPartSizeBytes:     uploadPartSizeBytes,
+		uploadConcurrency:       uploadConcurrency,
+		multipartAbortTimeout:   multipartAbortTimeout,
 	}, nil
 }
 
 func (a *S3Adapter) UploadStream(ctx context.Context, objectName string, stream io.Reader) error {
+	if upload, ok := stream.(SizedUpload); ok && !a.disableStreamingUploads && upload.Size > 0 && upload.Size <= s3MaxSingleUploadSize {
+		_, err := a.client.PutObject(ctx, &s3.PutObjectInput{
+			Bucket:        aws.String(a.bucket),
+			Key:           aws.String(a.key(objectName)),
+			Body:          stream,
+			ContentLength: aws.Int64(upload.Size),
+		}, func(options *s3.Options) {
+			options.APIOptions = append(options.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
+			options.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			options.Retryer = aws.NopRetryer{}
+		})
+		if err != nil {
+			return fmt.Errorf("stream upload to s3: %w", err)
+		}
+		return nil
+	}
 	transfer := a.transfer
 	if transfer == nil {
 		transfer = newS3TransferManager(a.client, s3UploadPartSizeBytes(a.uploadPartSizeBytes), s3UploadConcurrency(a.uploadConcurrency))

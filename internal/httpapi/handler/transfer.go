@@ -15,6 +15,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/bufferpool"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cache"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi/response"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -80,13 +81,14 @@ func (h *Handler) UploadPart(c *gin.Context) {
 	}
 	defer c.Request.Body.Close()
 
+	body := storage.SizedUpload{Reader: c.Request.Body, Size: c.Request.ContentLength}
 	if blockID != "" {
-		if err := h.cache.UploadBlock(c.Request.Context(), uploadID, blockID, c.Request.Body); err != nil {
+		if err := h.cache.UploadBlock(c.Request.Context(), uploadID, blockID, body); err != nil {
 			h.writeCacheError(c, err)
 			return
 		}
 	} else {
-		if err := h.cache.UploadPart(c.Request.Context(), uploadID, c.Request.Body); err != nil {
+		if err := h.cache.UploadPart(c.Request.Context(), uploadID, body); err != nil {
 			h.writeCacheError(c, err)
 			return
 		}

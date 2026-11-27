@@ -32,6 +32,11 @@ func (e ObjectNotFoundError) Unwrap() error {
 	return ErrObjectNotFound
 }
 
+type SizedUpload struct {
+	io.Reader
+	Size int64
+}
+
 type Adapter interface {
 	UploadStream(ctx context.Context, objectName string, stream io.Reader) error
 	CopyObject(ctx context.Context, sourceObjectName, destinationObjectName string) error

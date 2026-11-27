@@ -157,11 +157,14 @@ for authenticated TLS.
 | `AWS_ENDPOINT_URL`                   | empty                      | Custom S3-compatible endpoint, such as MinIO.                                                                   |
 | `STORAGE_S3_FORCE_PATH_STYLE`        | `true`                     | Uses path-style S3 addressing.                                                                                  |
 | `STORAGE_S3_KEY_PREFIX`              | `gh-actions-cache`         | Prefix for all S3 keys.                                                                                         |
-| `STORAGE_S3_UPLOAD_PART_SIZE_BYTES`  | `5242880`                  | S3 upload part size and threshold in integer bytes. Minimum `5242880` bytes (5 MiB); lower values fail startup. |
+| `STORAGE_S3_DISABLE_STREAMING_UPLOADS` | `false`                  | Routes all uploads through the S3 transfer manager. Enable this for buckets that require signed payloads or request checksums. |
+| `STORAGE_S3_UPLOAD_PART_SIZE_BYTES`  | `5242880`                  | Transfer manager part size and multipart threshold. Minimum `5242880` bytes (5 MiB); lower values fail startup. |
 | `STORAGE_S3_UPLOAD_CONCURRENCY`      | `1`                        | S3 transfer manager upload worker count per object.                                                             |
 | `STORAGE_S3_MULTIPART_ABORT_TIMEOUT` | `30s`                      | Timeout for aborting failed S3 multipart uploads.                                                               |
 
 S3 credentials are loaded through the AWS SDK default credential chain.
+Known-length cache blocks up to 5 GiB stream in one S3 PUT with
+`UNSIGNED-PAYLOAD`, so use HTTPS.
 
 For S3 deployments, configure an `AbortIncompleteMultipartUpload` bucket
 lifecycle rule scoped to the key prefix (for example, `DaysAfterInitiation: 1`)

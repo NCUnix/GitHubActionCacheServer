@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -155,6 +156,72 @@ func TestS3AdapterUploadStreamUsesMultipartForLargeObjects(t *testing.T) {
 	require.Equal(t, []int{config.DefaultS3UploadPartSizeBytes, 1}, fakeS3.uploadedPartSizes())
 	require.True(t, fakeS3.completeMultipartCalled())
 	require.False(t, fakeS3.abortMultipartCalled())
+}
+
+func TestS3AdapterStreamsKnownLengthUploads(t *testing.T) {
+	payload := bytes.Repeat([]byte("abc"), config.DefaultS3UploadPartSizeBytes/3+1)
+	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			fakeS3 := newFakeS3Server(t, fakeS3Options{
+				onPutObject: func(w http.ResponseWriter, r *http.Request) {
+					assert.Equal(t, "/cache-bucket/gh-actions-cache/folder/object", r.URL.Path)
+					assert.Equal(t, int64(len(payload)), r.ContentLength)
+					assert.Equal(t, "UNSIGNED-PAYLOAD", r.Header.Get("X-Amz-Content-Sha256"))
+					assert.Empty(t, r.Header.Get("X-Amz-Sdk-Checksum-Algorithm"))
+					body, err := io.ReadAll(r.Body)
+					assert.NoError(t, err)
+					assert.True(t, bytes.Equal(payload, body))
+					w.WriteHeader(status)
+				},
+			})
+			t.Cleanup(fakeS3.Close)
+			adapter, err := newTestS3Adapter(t, fakeS3.URL)
+			require.NoError(t, err)
+
+			err = adapter.UploadStream(t.Context(), "folder/object", SizedUpload{
+				Reader: io.LimitReader(bytes.NewReader(payload), int64(len(payload))),
+				Size:   int64(len(payload)),
+			})
+			if status == http.StatusOK {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, "stream upload to s3")
+			}
+			require.True(t, fakeS3.putObjectCalled())
+			require.False(t, fakeS3.createMultipartCalled())
+			require.Equal(t, 1, fakeS3.listObjectsCount())
+			require.Equal(t, 2, fakeS3.requestCountValue())
+		})
+	}
+}
+
+func TestS3AdapterKnownLengthUploadCanUseTransferManager(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		disabled bool
+		size     int64
+	}{
+		{name: "disabled", disabled: true, size: config.DefaultS3UploadPartSizeBytes + 1},
+		{name: "unknown length", size: -1},
+		{name: "above single PUT limit", size: s3MaxSingleUploadSize + 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fakeS3 := newFakeS3Server(t, fakeS3Options{})
+			t.Cleanup(fakeS3.Close)
+			adapter, err := newTestS3AdapterWithConfig(t, config.StorageConfig{
+				S3EndpointURL:             fakeS3.URL,
+				S3DisableStreamingUploads: test.disabled,
+			})
+			require.NoError(t, err)
+
+			require.NoError(t, adapter.UploadStream(t.Context(), "folder/object", SizedUpload{
+				Reader: bytes.NewReader(make([]byte, config.DefaultS3UploadPartSizeBytes+1)),
+				Size:   test.size,
+			}))
+			require.False(t, fakeS3.putObjectCalled())
+			require.True(t, fakeS3.completeMultipartCalled())
+		})
+	}
 }
 
 func TestS3AdapterUploadStreamUsesConfiguredUploadOptions(t *testing.T) {
@@ -902,6 +969,7 @@ type fakeS3Options struct {
 	failPartNumber      int
 	onUploadPart        func(int)
 	onCopyPart          func(int)
+	onPutObject         http.HandlerFunc
 	objectSizes         map[string]int64
 }
 
@@ -916,6 +984,7 @@ type fakeS3Server struct {
 	failPartNumber      int
 	onUploadPart        func(int)
 	onCopyPart          func(int)
+	onPutObject         http.HandlerFunc
 	objectSizes         map[string]int64
 
 	mu              sync.Mutex
@@ -960,6 +1029,7 @@ func newFakeS3Server(t testing.TB, options fakeS3Options) *fakeS3Server {
 		failPartNumber:      options.failPartNumber,
 		onUploadPart:        options.onUploadPart,
 		onCopyPart:          options.onCopyPart,
+		onPutObject:         options.onPutObject,
 		objectSizes:         options.objectSizes,
 	}
 	fakeS3.Server = httptest.NewServer(http.HandlerFunc(fakeS3.handle))
@@ -1050,10 +1120,14 @@ func (s *fakeS3Server) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		_, _ = fmt.Fprint(w, `<CopyObjectResult><ETag>"copy"</ETag><LastModified>2026-07-27T00:00:00.000Z</LastModified></CopyObjectResult>`)
 	case r.Method == http.MethodPut && r.URL.Query().Get("partNumber") == "":
-		_, _ = io.Copy(io.Discard, r.Body)
 		s.mu.Lock()
 		s.putObject = true
 		s.mu.Unlock()
+		if s.onPutObject != nil {
+			s.onPutObject(w, r)
+			return
+		}
+		_, _ = io.Copy(io.Discard, r.Body)
 		w.WriteHeader(http.StatusOK)
 	case r.Method == http.MethodPost && hasQueryKey(r, "uploads"):
 		s.mu.Lock()
@@ -1243,6 +1317,7 @@ func newTestS3AdapterWithConfig(t testing.TB, cfg config.StorageConfig) (*S3Adap
 		S3EndpointURL:                   cfg.S3EndpointURL,
 		S3ForcePathStyle:                true,
 		S3KeyPrefix:                     cfg.S3KeyPrefix,
+		S3DisableStreamingUploads:       cfg.S3DisableStreamingUploads,
 		S3UploadPartSizeBytes:           cfg.S3UploadPartSizeBytes,
 		S3UploadPartSizeBytesConfigured: cfg.S3UploadPartSizeBytesConfigured,
 		S3UploadConcurrency:             cfg.S3UploadConcurrency,
