@@ -1,14 +1,20 @@
-FROM golang:alpine AS build
+FROM --platform=$BUILDPLATFORM golang:alpine AS build
 
 WORKDIR /app
-
-RUN apk add --no-cache ca-certificates git
 
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/cache-server ./cmd/server
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+RUN if [ "$TARGETARCH" = arm ]; then \
+        export GOARM="${TARGETVARIANT#v}"; \
+    fi \
+    && CGO_ENABLED=0 GOOS="$TARGETOS" GOARCH="$TARGETARCH" \
+        go build -trimpath -ldflags="-s -w" -o /out/cache-server ./cmd/server
 
 FROM alpine:latest
 

@@ -35,9 +35,16 @@ jobs:
       - name: Build
         env:
           NAME: action-cache-server
+          PLATFORMS: >-
+            darwin/amd64,darwin/arm64,
+            freebsd/386,freebsd/amd64,freebsd/arm,freebsd/arm64,
+            linux/386,linux/amd64,linux/arm,linux/arm64,linux/loong64,linux/ppc64le,linux/riscv64,linux/s390x,
+            windows/386,windows/amd64,windows/arm64
+        shell: bash
         run: |
           ./build/release ./cmd/server --extra-arches --output build/output \
             --name "$NAME" \
+            --platforms "${PLATFORMS// /}" \
             -c tar.gz \
             -j 1
 
