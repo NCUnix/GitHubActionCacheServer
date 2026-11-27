@@ -18,6 +18,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/dbclock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/metrics"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
@@ -74,7 +75,7 @@ func main() {
 		logger.Fatal().Err(err).Msg("storage initialization failed")
 	}
 	metricsRegistry := metrics.New(dbClient)
-	lifecycleService := storagelifecycle.NewWithOptions(dbClient, storagelifecycle.Options{DirectDownloadURLTTL: cfg.Cache.DirectDownloadURLTTL, Now: clock.Now})
+	lifecycleService := newStorageLifecycle(dbClient, storageAdapter, cfg.Cache.DirectDownloadURLTTL, clock.Now)
 	var jobLocker *dblock.Locker
 	// SQLite is single-instance, and a held lock transaction would occupy its only connection and deadlock.
 	if cfg.DB.Driver != db.DriverSQLite {
@@ -233,6 +234,15 @@ func main() {
 	}
 
 	logger.Info().Msg("server stopped")
+}
+
+func newStorageLifecycle(dbClient *ent.Client, adapter storage.Adapter, directDownloadURLTTL time.Duration, now func() time.Time) *storagelifecycle.Service {
+	_, canCompose := adapter.(storage.ComposeAdapter)
+	return storagelifecycle.NewWithOptions(dbClient, storagelifecycle.Options{
+		DirectDownloadURLTTL:    directDownloadURLTTL,
+		Now:                     now,
+		MaterializationDisabled: !canCompose,
+	})
 }
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
