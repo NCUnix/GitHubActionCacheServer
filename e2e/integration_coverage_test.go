@@ -167,6 +167,46 @@ func TestExternalMySQLSchemaMigrationSerialization(t *testing.T) {
 	requireExternalSizeColumn(t, ctx, dbCfg)
 }
 
+func TestExternalMySQLSchemaMigrationRunsOnLockSession(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL migration lock session coverage")
+	}
+
+	ctx := context.Background()
+	prepareExternalSizeColumnMigration(t, ctx, dbCfg)
+	blockerDB := openExternalSQLDB(t, ctx, dbCfg)
+	t.Cleanup(func() { require.NoError(t, blockerDB.Close()) })
+	blockerTx, err := blockerDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = blockerTx.Rollback() }()
+	_, err = blockerTx.ExecContext(ctx, "select 1 from storage_locations limit 1")
+	require.NoError(t, err)
+
+	resultCh := startExternalMigration(ctx, dbCfg)
+	lockName := externalMySQLMigrationLockName(dbCfg.MySQLDatabase)
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		var alters int64
+		require.NoError(t, blockerDB.QueryRowContext(
+			ctx,
+			"select count(*) from information_schema.processlist where id = is_used_lock(?) and lower(info) like 'alter table%'",
+			lockName,
+		).Scan(&alters))
+		if alters == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			require.FailNow(t, "ALTER TABLE did not run on the session holding the migration lock")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	require.NoError(t, blockerTx.Commit())
+	requireExternalMigrationSuccess(t, resultCh)
+	requireExternalSizeColumn(t, ctx, dbCfg)
+}
+
 func TestSQLiteCacheKeyMatching(t *testing.T) {
 	app := newTestApp(t)
 	runCacheKeyMatching(t, app.db, app.router)

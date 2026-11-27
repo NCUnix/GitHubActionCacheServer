@@ -66,7 +66,7 @@ func OpenAndMigrate(ctx context.Context, cfg config.DBConfig) (*ent.Client, erro
 	case DriverPostgres:
 		err = migratePostgresWithLock(ctx, opened.sqlDB)
 	case DriverMySQL:
-		err = migrateMySQLWithLock(ctx, cfg, opened)
+		err = migrateMySQLWithLock(ctx, cfg)
 	case DriverSQLite:
 		err = migrateSchema(ctx, opened.client)
 		if err == nil {
@@ -176,28 +176,29 @@ func openMySQL(ctx context.Context, cfg config.DBConfig) (*openedDatabase, error
 	}, nil
 }
 
-type postgresMigrationDriver struct {
-	conn entsqldialect.Conn
+type migrationDriver struct {
+	conn    entsqldialect.Conn
+	dialect string
 }
 
-func (d *postgresMigrationDriver) Exec(ctx context.Context, query string, args, value any) error {
+func (d *migrationDriver) Exec(ctx context.Context, query string, args, value any) error {
 	return d.conn.Exec(ctx, query, args, value)
 }
 
-func (d *postgresMigrationDriver) Query(ctx context.Context, query string, args, value any) error {
+func (d *migrationDriver) Query(ctx context.Context, query string, args, value any) error {
 	return d.conn.Query(ctx, query, args, value)
 }
 
-func (d *postgresMigrationDriver) Tx(context.Context) (dialect.Tx, error) {
+func (d *migrationDriver) Tx(context.Context) (dialect.Tx, error) {
 	return dialect.NopTx(d), nil
 }
 
-func (*postgresMigrationDriver) Close() error {
+func (*migrationDriver) Close() error {
 	return nil
 }
 
-func (*postgresMigrationDriver) Dialect() string {
-	return dialect.Postgres
+func (d *migrationDriver) Dialect() string {
+	return d.dialect
 }
 
 func migratePostgresWithLock(ctx context.Context, sqlDB *sql.DB) (retErr error) {
@@ -222,8 +223,9 @@ func migratePostgresWithLock(ctx context.Context, sqlDB *sql.DB) (retErr error) 
 	}
 	logger.Info().Str("driver", DriverPostgres).Dur("wait", time.Since(waitStartedAt)).Msg("database schema migration lock acquired")
 
-	driver := &postgresMigrationDriver{
-		conn: entsqldialect.Conn{ExecQuerier: tx},
+	driver := &migrationDriver{
+		conn:    entsqldialect.Conn{ExecQuerier: tx},
+		dialect: dialect.Postgres,
 	}
 	if err := migrate.NewSchema(driver).Create(ctx, migrate.WithForeignKeys(true)); err != nil {
 		return err
@@ -238,13 +240,15 @@ func migratePostgresWithLock(ctx context.Context, sqlDB *sql.DB) (retErr error) 
 	return nil
 }
 
+// mysqlMigrationLock owns a dedicated lockDB so closing it always ends the
+// GET_LOCK session; a pooled conn would return to the pool still holding it.
 type mysqlMigrationLock struct {
 	db       *sql.DB
 	conn     *sql.Conn
 	lockName string
 }
 
-func migrateMySQLWithLock(ctx context.Context, cfg config.DBConfig, opened *openedDatabase) (retErr error) {
+func migrateMySQLWithLock(ctx context.Context, cfg config.DBConfig) (retErr error) {
 	lock, err := acquireMySQLMigrationLock(ctx, cfg)
 	if err != nil {
 		return err
@@ -252,10 +256,14 @@ func migrateMySQLWithLock(ctx context.Context, cfg config.DBConfig, opened *open
 	defer func() {
 		retErr = errors.Join(retErr, lock.release())
 	}()
-	if err := migrateSchema(ctx, opened.client); err != nil {
+	driver := &migrationDriver{
+		conn:    entsqldialect.Conn{ExecQuerier: lock.conn},
+		dialect: dialect.MySQL,
+	}
+	if err := migrate.NewSchema(driver).Create(ctx, migrate.WithForeignKeys(true)); err != nil {
 		return err
 	}
-	return backfillStorageLocationRecency(ctx, opened.sqlDB, DriverMySQL)
+	return backfillStorageLocationRecency(ctx, lock.conn, DriverMySQL)
 }
 
 func acquireMySQLMigrationLock(ctx context.Context, cfg config.DBConfig) (*mysqlMigrationLock, error) {
