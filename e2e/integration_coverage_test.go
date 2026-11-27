@@ -77,6 +77,27 @@ func TestExternalMySQLFilesystemSaveAndRestore(t *testing.T) {
 	runSaveRestoreFlow(t, router, uniqueIntegrationCacheKey("mysql"), "mysql-cache-content")
 }
 
+func TestExternalMySQLUploadBlocksAtSameTimestamp(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL integration coverage")
+	}
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, dbCfg)
+	now := time.Now()
+	service := newTestCacheService(t, cache.Options{
+		DB:      client,
+		Storage: testutil.NewFilesystemAdapter(t),
+		Now:     func() time.Time { return now },
+	})
+	scope := auth.CacheScope{RepoID: "123", Scopes: []auth.Scope{{Scope: "refs/heads/main", Permission: 3}}}
+	reservation, err := service.CreateUpload(ctx, uniqueIntegrationCacheKey("mysql"), defaultCacheEntryVersion, scope)
+	require.NoError(t, err)
+	require.NoError(t, service.UploadBlock(ctx, reservation.UploadID, "first", strings.NewReader("first")))
+	require.NoError(t, service.UploadBlock(ctx, reservation.UploadID, "second", strings.NewReader("second")))
+}
+
 func TestExternalPostgresReaderLeaseForeignKeyIsClassified(t *testing.T) {
 	dbCfg, ok := externalPostgresConfig()
 	if !ok {

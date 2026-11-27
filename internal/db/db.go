@@ -405,6 +405,7 @@ func (l *mysqlMigrationLock) close() error {
 
 func mysqlDSN(cfg config.DBConfig) string {
 	mysqlCfg := mysql.NewConfig()
+	mysqlCfg.ClientFoundRows = true
 	mysqlCfg.User = cfg.MySQLUser
 	mysqlCfg.Passwd = cfg.MySQLPassword
 	mysqlCfg.Net = "tcp"
