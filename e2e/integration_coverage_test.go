@@ -664,6 +664,7 @@ func runExternalCapacityEvictionSkipsWhileLocked(t *testing.T, dbCfg config.DBCo
 	result, err := service.Enforce(ctx)
 
 	require.NoError(t, err)
+	require.True(t, result.Skipped)
 	require.Zero(t, result.ClaimedLocations)
 	require.Nil(t, client.StorageLocation.GetX(ctx, old.ID).DeletionRequestedAt)
 
@@ -671,6 +672,7 @@ func runExternalCapacityEvictionSkipsWhileLocked(t *testing.T, dbCfg config.DBCo
 	result, err = service.Enforce(ctx)
 
 	require.NoError(t, err)
+	require.False(t, result.Skipped)
 	require.Equal(t, 1, result.ClaimedLocations)
 }
 

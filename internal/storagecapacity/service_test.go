@@ -260,6 +260,36 @@ func TestRunCoalescesPreReadinessSignalIntoStartupPass(t *testing.T) {
 	<-done
 }
 
+func TestRunRetriesSkippedPass(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan struct{})
+	done := make(chan struct{})
+	var calls atomic.Int32
+	service := &Service{
+		enabled:         true,
+		trigger:         make(chan struct{}, 1),
+		enforceInterval: time.Hour,
+		retryInitial:    time.Millisecond,
+		retryMaximum:    time.Millisecond,
+	}
+	service.enforce = func(context.Context) (Result, error) {
+		if calls.Add(1) == 1 {
+			return Result{Skipped: true}, nil
+		}
+		return Result{}, nil
+	}
+	go func() {
+		defer close(done)
+		service.Run(ctx, ready)
+	}()
+
+	close(ready)
+	require.Eventually(t, func() bool { return calls.Load() == 2 }, time.Second, time.Millisecond)
+	require.Never(t, func() bool { return calls.Load() > 2 }, 50*time.Millisecond, time.Millisecond)
+	cancel()
+	<-done
+}
+
 func createCapacityLocation(ctx context.Context, client *ent.Client, id string, size int64, lastDownloadedAt *int64, updatedAt int64) *ent.StorageLocation {
 	recency := updatedAt
 	if lastDownloadedAt != nil {

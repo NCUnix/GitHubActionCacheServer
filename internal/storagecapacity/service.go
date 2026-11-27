@@ -52,6 +52,8 @@ type Result struct {
 	StaleLocations      int
 	UnresolvedLocations int
 	Constrained         bool
+	// Skipped means another replica held the eviction lock, so this pass did nothing.
+	Skipped bool
 }
 
 type Service struct {
@@ -161,6 +163,11 @@ func (s *Service) Run(ctx context.Context, ready <-chan struct{}) {
 				stopTimer(retryTimer)
 				retry = nil
 				retryDelay = s.retryInitial
+				if result.Skipped {
+					// The lock holder cannot see data written after it started, so rerun later with a fresh snapshot.
+					retryTimer = resetTimer(retryTimer, s.retryInitial)
+					retry = retryTimer.C
+				}
 				s.logResult(result)
 			}
 			run = false
@@ -194,7 +201,7 @@ func (s *Service) Enforce(ctx context.Context) (result Result, err error) {
 	}
 	if lock == nil {
 		s.logger.Debug().Msg("capacity eviction skipped because another replica is running it")
-		return Result{}, nil
+		return Result{Skipped: true}, nil
 	}
 	defer func() {
 		err = errors.Join(err, lock.Release())
