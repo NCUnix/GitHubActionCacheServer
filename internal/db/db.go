@@ -94,7 +94,7 @@ type sqlExecContext interface {
 // backfillStorageLocationRecency materializes eviction recency for rows written
 // before the recencyAt column existed, and repairs rows an older binary touched
 // without maintaining recencyAt (recencyAt < lastDownloadedAt is unreachable for
-// maintained rows). Idempotent. Must run under the same lock as the DDL.
+// maintained rows). Idempotent. Must run under the schema migration lock.
 func backfillStorageLocationRecency(ctx context.Context, exec sqlExecContext, driver string) error {
 	query := `UPDATE storage_locations SET "recencyAt" = COALESCE("lastDownloadedAt", (SELECT MAX("updatedAt") FROM cache_entries WHERE cache_entries."locationId" = storage_locations."id"), 0) WHERE "deletionRequestedAt" IS NULL AND ("recencyAt" = 0 OR ("lastDownloadedAt" IS NOT NULL AND "recencyAt" < "lastDownloadedAt"))`
 	if driver == DriverMySQL {
@@ -201,40 +201,49 @@ func (d *migrationDriver) Dialect() string {
 	return d.dialect
 }
 
-func migratePostgresWithLock(ctx context.Context, sqlDB *sql.DB) (retErr error) {
+func migratePostgresWithLock(ctx context.Context, sqlDB *sql.DB) error {
+	if err := withPostgresMigrationLock(ctx, sqlDB, "schema", func(tx *sql.Tx) error {
+		driver := &migrationDriver{
+			conn:    entsqldialect.Conn{ExecQuerier: tx},
+			dialect: dialect.Postgres,
+		}
+		return migrate.NewSchema(driver).Create(ctx, migrate.WithForeignKeys(true))
+	}); err != nil {
+		return err
+	}
+	// Commit the backfill separately so DDL ACCESS EXCLUSIVE locks are not held across the full-table UPDATE.
+	return withPostgresMigrationLock(ctx, sqlDB, "backfill", func(tx *sql.Tx) error {
+		return backfillStorageLocationRecency(ctx, tx, DriverPostgres)
+	})
+}
+
+func withPostgresMigrationLock(ctx context.Context, sqlDB *sql.DB, stage string, run func(*sql.Tx) error) (retErr error) {
 	tx, err := sqlDB.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin postgres schema migration transaction: %w", err)
+		return fmt.Errorf("begin postgres %s migration transaction: %w", stage, err)
 	}
 	defer func() {
 		if tx == nil {
 			return
 		}
 		if err := tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
-			retErr = errors.Join(retErr, fmt.Errorf("rollback postgres schema migration: %w", err))
+			retErr = errors.Join(retErr, fmt.Errorf("rollback postgres %s migration: %w", stage, err))
 		}
 	}()
 
 	logger := zerolog.Ctx(ctx)
 	waitStartedAt := time.Now()
-	logger.Info().Str("driver", DriverPostgres).Msg("waiting for database schema migration lock")
+	logger.Info().Str("driver", DriverPostgres).Str("stage", stage).Msg("waiting for database schema migration lock")
 	if _, err := tx.ExecContext(ctx, "select pg_advisory_xact_lock($1)", postgresMigrationLockKey); err != nil {
-		return fmt.Errorf("acquire postgres schema migration lock: %w", err)
+		return fmt.Errorf("acquire postgres schema migration lock for %s stage: %w", stage, err)
 	}
-	logger.Info().Str("driver", DriverPostgres).Dur("wait", time.Since(waitStartedAt)).Msg("database schema migration lock acquired")
+	logger.Info().Str("driver", DriverPostgres).Str("stage", stage).Dur("wait", time.Since(waitStartedAt)).Msg("database schema migration lock acquired")
 
-	driver := &migrationDriver{
-		conn:    entsqldialect.Conn{ExecQuerier: tx},
-		dialect: dialect.Postgres,
-	}
-	if err := migrate.NewSchema(driver).Create(ctx, migrate.WithForeignKeys(true)); err != nil {
-		return err
-	}
-	if err := backfillStorageLocationRecency(ctx, tx, DriverPostgres); err != nil {
+	if err := run(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit postgres schema migration: %w", err)
+		return fmt.Errorf("commit postgres %s migration: %w", stage, err)
 	}
 	tx = nil
 	return nil

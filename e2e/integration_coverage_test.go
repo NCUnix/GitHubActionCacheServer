@@ -131,6 +131,61 @@ func TestExternalPgBouncerSchemaMigrationSerialization(t *testing.T) {
 	requireExternalSizeColumn(t, ctx, dbCfg)
 }
 
+func TestExternalPostgresSchemaMigrationCommitsDDLBeforeBackfill(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
+	if !ok {
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL migration lock scope coverage")
+	}
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, dbCfg)
+	locationID := uniqueIntegrationCacheKey("backfill-location")
+	client.StorageLocation.Create().
+		SetID(locationID).
+		SetFolderName(locationID + "-folder").
+		SetPartCount(1).
+		SetRecencyAt(0).
+		SaveX(ctx)
+
+	t.Cleanup(func() {
+		restored, err := db.OpenAndMigrate(context.Background(), dbCfg)
+		require.NoError(t, err)
+		if restored != nil {
+			require.NoError(t, restored.Close())
+		}
+	})
+	sqlDB := openExternalSQLDB(t, ctx, dbCfg)
+	_, err := sqlDB.ExecContext(ctx, `alter table uploads drop column "lastPartUploadedAt"`)
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	blockerDB := openExternalSQLDB(t, ctx, dbCfg)
+	t.Cleanup(func() { require.NoError(t, blockerDB.Close()) })
+	blockerTx, err := blockerDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = blockerTx.Rollback() }()
+	_, err = blockerTx.ExecContext(ctx, "select 1 from storage_locations where id = $1 for update", locationID)
+	require.NoError(t, err)
+
+	resultCh := startExternalMigration(ctx, dbCfg)
+	requireExternalRowsEventually(t, ctx, blockerDB,
+		"backfill did not block on the storage location row lock",
+		"select count(*) from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike 'update storage_locations%'",
+	)
+
+	var columnExists bool
+	require.NoError(t, blockerDB.QueryRowContext(ctx, `select exists(
+		select 1 from information_schema.columns
+		where table_schema = current_schema()
+			and table_name = 'uploads'
+			and column_name = 'lastPartUploadedAt'
+	)`).Scan(&columnExists))
+	require.True(t, columnExists, "schema DDL must be committed before the backfill runs")
+
+	require.NoError(t, blockerTx.Commit())
+	requireExternalMigrationSuccess(t, resultCh)
+}
+
 func TestExternalMySQLSchemaMigrationSerialization(t *testing.T) {
 	dbCfg, ok := externalMySQLConfig()
 	if !ok {
@@ -184,23 +239,11 @@ func TestExternalMySQLSchemaMigrationRunsOnLockSession(t *testing.T) {
 	require.NoError(t, err)
 
 	resultCh := startExternalMigration(ctx, dbCfg)
-	lockName := externalMySQLMigrationLockName(dbCfg.MySQLDatabase)
-	deadline := time.Now().Add(15 * time.Second)
-	for {
-		var alters int64
-		require.NoError(t, blockerDB.QueryRowContext(
-			ctx,
-			"select count(*) from information_schema.processlist where id = is_used_lock(?) and lower(info) like 'alter table%'",
-			lockName,
-		).Scan(&alters))
-		if alters == 1 {
-			break
-		}
-		if time.Now().After(deadline) {
-			require.FailNow(t, "ALTER TABLE did not run on the session holding the migration lock")
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	requireExternalRowsEventually(t, ctx, blockerDB,
+		"ALTER TABLE did not run on the session holding the migration lock",
+		"select count(*) from information_schema.processlist where id = is_used_lock(?) and lower(info) like 'alter table%'",
+		externalMySQLMigrationLockName(dbCfg.MySQLDatabase),
+	)
 
 	require.NoError(t, blockerTx.Commit())
 	requireExternalMigrationSuccess(t, resultCh)
@@ -766,6 +809,23 @@ func requireMigrationStillWaiting(t *testing.T, resultCh <-chan externalMigratio
 		}
 		require.FailNow(t, "migration returned before the database lock was released", "error: %v", result.err)
 	case <-time.After(250 * time.Millisecond):
+	}
+}
+
+// requireExternalRowsEventually polls on the test goroutine so query errors can fail immediately.
+func requireExternalRowsEventually(t *testing.T, ctx context.Context, sqlDB *sql.DB, failure, countQuery string, args ...any) {
+	t.Helper()
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		var rows int64
+		require.NoError(t, sqlDB.QueryRowContext(ctx, countQuery, args...).Scan(&rows))
+		if rows > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			require.FailNow(t, failure)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }
 
