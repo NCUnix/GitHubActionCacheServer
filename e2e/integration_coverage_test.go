@@ -111,10 +111,10 @@ func TestExternalMySQLReaderLeaseForeignKeyIsClassified(t *testing.T) {
 	require.True(t, ent.IsConstraintError(err))
 }
 
-func TestExternalPgBouncerSchemaMigrationSerialization(t *testing.T) {
-	dbCfg, ok := externalPgBouncerConfig()
+func TestExternalPostgresSchemaMigrationSerialization(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
 	if !ok {
-		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer migration serialization coverage")
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL migration serialization coverage")
 	}
 
 	ctx := context.Background()
@@ -346,15 +346,6 @@ func TestExternalPostgresJobLockExclusion(t *testing.T) {
 	runExternalJobLockExclusion(t, dbCfg)
 }
 
-func TestExternalPgBouncerJobLockExclusion(t *testing.T) {
-	dbCfg, ok := externalPgBouncerConfig()
-	if !ok {
-		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer integration coverage")
-	}
-
-	runExternalJobLockExclusion(t, dbCfg)
-}
-
 func TestExternalMySQLJobLockExclusion(t *testing.T) {
 	dbCfg, ok := externalMySQLConfig()
 	if !ok {
@@ -368,15 +359,6 @@ func TestExternalPostgresJobLockLoss(t *testing.T) {
 	dbCfg, ok := externalPostgresConfig()
 	if !ok {
 		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
-	}
-
-	runExternalPostgresJobLockLoss(t, dbCfg)
-}
-
-func TestExternalPgBouncerJobLockLoss(t *testing.T) {
-	dbCfg, ok := externalPgBouncerConfig()
-	if !ok {
-		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer integration coverage")
 	}
 
 	runExternalPostgresJobLockLoss(t, dbCfg)
@@ -404,15 +386,6 @@ func TestExternalPostgresDatabaseClockSync(t *testing.T) {
 	dbCfg, ok := externalPostgresConfig()
 	if !ok {
 		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
-	}
-
-	runExternalDatabaseClockSync(t, dbCfg)
-}
-
-func TestExternalPgBouncerDatabaseClockSync(t *testing.T) {
-	dbCfg, ok := externalPgBouncerConfig()
-	if !ok {
-		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer integration coverage")
 	}
 
 	runExternalDatabaseClockSync(t, dbCfg)
@@ -958,17 +931,6 @@ func newExternalRouter(t *testing.T, client *ent.Client, storageAdapter storage.
 
 func externalPostgresConfig() (config.DBConfig, bool) {
 	dsn := strings.TrimSpace(os.Getenv("E2E_POSTGRES_URL"))
-	if dsn == "" {
-		return config.DBConfig{}, false
-	}
-	return config.DBConfig{
-		Driver:      db.DriverPostgres,
-		PostgresURL: dsn,
-	}, true
-}
-
-func externalPgBouncerConfig() (config.DBConfig, bool) {
-	dsn := strings.TrimSpace(os.Getenv("E2E_PGBOUNCER_URL"))
 	if dsn == "" {
 		return config.DBConfig{}, false
 	}

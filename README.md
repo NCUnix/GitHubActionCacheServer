@@ -289,6 +289,9 @@ E2E_S3_BUCKET=cache-test \
 go test ./e2e -run 'TestExternal((Postgres|MySQL)Filesystem|S3)SaveAndRestore' -count=1
 ```
 
+To cover PgBouncer transaction pooling, rerun the `TestExternalPostgres` tests
+with `E2E_POSTGRES_URL` pointing at PgBouncer and `default_query_exec_mode=exec`.
+
 Targeted data-path benchmarks cover filesystem whole-cache upload/download,
 Azure block commit, ordered-parts versus merged downloads, concurrent runners,
 and S3 server-side composition:

@@ -108,7 +108,6 @@ jobs:
       - name: External service integration tests
         env:
           E2E_POSTGRES_URL: postgres://cache:cache@127.0.0.1:5432/cache_test?sslmode=disable
-          E2E_PGBOUNCER_URL: "postgres://cache:cache@127.0.0.1:6432/cache_test?sslmode=disable&default_query_exec_mode=exec"
           E2E_MYSQL_HOST: 127.0.0.1
           E2E_MYSQL_PORT: "3306"
           E2E_MYSQL_DATABASE: cache_test
@@ -119,4 +118,9 @@ jobs:
           AWS_ACCESS_KEY_ID: rustfsadmin
           AWS_SECRET_ACCESS_KEY: rustfsadmin
           AWS_EC2_METADATA_DISABLED: "true"
-        run: go test ./e2e -run 'TestExternal((Postgres|MySQL)(FilesystemSaveAndRestore|CacheKeyMatching|CleanupRetention|StorageSizeMigration|CapacityEviction|CapacityEvictionSkipsWhileLocked|SchemaMigrationSerialization)|(Postgres|PgBouncer|MySQL)(JobLockExclusion|DatabaseClockSync)|(Postgres|PgBouncer)JobLockLoss|MySQLSchemaMigrationRunsOnLockSession|PostgresSchemaMigrationCommitsDDLBeforeBackfill|PgBouncerSchemaMigrationSerialization|S3SaveAndRestore)' -count=1
+        run: go test ./e2e -run '^TestExternal' -count=1
+
+      - name: PostgreSQL integration tests through PgBouncer
+        env:
+          E2E_POSTGRES_URL: "postgres://cache:cache@127.0.0.1:6432/cache_test?sslmode=disable&default_query_exec_mode=exec"
+        run: go test ./e2e -run '^TestExternalPostgres' -count=1
