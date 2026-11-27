@@ -137,6 +137,9 @@ required for saves; scopes with permission `>= 1` are used for restores.
 Schema migrations run automatically at startup and are serialized across instances.
 MySQL requires 8.0.1+ because background job locks use `SELECT ... FOR UPDATE SKIP LOCKED`.
 
+For PgBouncer transaction pooling, set `DB_POSTGRES_URL` with
+`default_query_exec_mode=exec`.
+
 `DB_POSTGRES_URL` sets its own TLS parameters and ignores
 `DB_POSTGRES_SSLMODE`. The opportunistic defaults permit plaintext fallback; use
 PostgreSQL `verify-full` or MySQL `true` with the CA in the system trust store
@@ -172,7 +175,7 @@ composition; verify lifecycle support when using an S3-compatible endpoint.
 | `ENABLE_DIRECT_DOWNLOADS`            | `false`              | When using S3, presigns eligible cache objects instead of proxying their downloads through the server.                    |
 | `DIRECT_DOWNLOAD_URL_TTL_SECONDS`    | `600`                | S3 direct URL lifetime, `1` to `3600` seconds. Shorter limits leaked-URL replay; delayed clients like BuildKit need more. |
 | `DOWNLOAD_URL_SIGNING_SECRET`        | generated at startup | HMAC secret for local signed upload and download URLs. Set a stable value for multi-instance or restart-safe deployments. |
-| `CACHE_MERGE_CONCURRENCY`            | CPU count            | Maximum number of concurrent S3 materializations. Values below `1` fall back to CPU count.                                |
+| `CACHE_MERGE_CONCURRENCY`            | CPU count            | Maximum concurrent S3 materializations per replica. Values below `1` fall back to CPU count.                              |
 | `CACHE_MAX_SIZE_BYTES`               | unset                | Maximum logical cache payload bytes for any backend. Must be a positive integer when set.                                 |
 | `CACHE_FILESYSTEM_MAX_USAGE_PERCENT` | `90`                 | Filesystem volume usage that triggers eviction when no explicit byte budget is set. Range `(0, 100]`.                     |
 
