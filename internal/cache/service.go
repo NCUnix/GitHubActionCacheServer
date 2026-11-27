@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/blockmanifest"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cachekey"
@@ -571,21 +570,16 @@ func (s *Service) GetCacheEntryWithDownloadURL(ctx context.Context, keys []strin
 
 	direct, directDownloads := s.storage.(storage.DirectDownloadAdapter)
 	for range maxDanglingPurgeAttempts {
-		cacheEntry, err := s.MatchCacheEntry(ctx, keys, version, scope)
+		match, err := s.lookupCacheEntry(ctx, keys, version, scope)
 		if err != nil {
 			return nil, err
 		}
-		if cacheEntry == nil {
+		if match == nil {
 			return nil, nil
 		}
 
-		location, err := s.db.StorageLocation.Query().
-			Where(storagelocation.ID(cacheEntry.LocationId)).
-			Only(ctx)
-		if err != nil {
-			if !ent.IsNotFound(err) {
-				return nil, fmt.Errorf("query matched storage location: %w", err)
-			}
+		cacheEntry, location := match.entry, match.location
+		if location == nil {
 			if _, purgeErr := s.lifecycle.PurgeDanglingCacheEntry(ctx, cacheEntry.ID, cacheEntry.LocationId); purgeErr != nil {
 				return nil, purgeErr
 			}
@@ -688,29 +682,13 @@ func anchorObjectName(location *ent.StorageLocation) string {
 	return partObjectName(location.FolderName, 0)
 }
 
+// MatchCacheEntry returns read-only entry data from the same lookup that reads the storage location for download URLs.
 func (s *Service) MatchCacheEntry(ctx context.Context, keys []string, version string, scope auth.CacheScope) (*ent.CacheEntry, error) {
-	scopes := ReadScopesByPermission(scope)
-	if len(scopes) == 0 {
-		return nil, nil
+	match, err := s.lookupCacheEntry(ctx, keys, version, scope)
+	if err != nil || match == nil {
+		return nil, err
 	}
-
-	primaryKey := keys[0]
-	restoreKeys := keys[1:]
-	for _, cacheScope := range scopes {
-		primaryMatch, err := s.findExactOrPrefixedCacheEntry(ctx, primaryKey, version, cacheScope, scope.RepoID)
-		if err != nil || primaryMatch != nil {
-			return primaryMatch, err
-		}
-
-		for _, restoreKey := range restoreKeys {
-			restoreMatch, err := s.findExactOrPrefixedCacheEntry(ctx, restoreKey, version, cacheScope, scope.RepoID)
-			if err != nil || restoreMatch != nil {
-				return restoreMatch, err
-			}
-		}
-	}
-
-	return nil, nil
+	return match.entry, nil
 }
 
 func (s *Service) Download(ctx context.Context, cacheEntryID string) (*DownloadStream, error) {
@@ -1064,58 +1042,6 @@ func (s *Service) completeUploadRecord(ctx context.Context, currentUpload *ent.U
 	}
 	committed = true
 	return location, cacheEntryID, nil
-}
-
-type cacheEntryMatch struct {
-	key     string
-	version string
-	scope   string
-	repoID  string
-	prefix  bool
-}
-
-func (s *Service) findExactOrPrefixedCacheEntry(ctx context.Context, key string, version string, cacheScope string, repoID string) (*ent.CacheEntry, error) {
-	exact, err := s.findCacheEntry(ctx, cacheEntryMatch{
-		key:     key,
-		version: version,
-		scope:   cacheScope,
-		repoID:  repoID,
-		prefix:  false,
-	})
-	if err != nil || exact != nil {
-		return exact, err
-	}
-
-	return s.findCacheEntry(ctx, cacheEntryMatch{
-		key:     key,
-		version: version,
-		scope:   cacheScope,
-		repoID:  repoID,
-		prefix:  true,
-	})
-}
-
-func (s *Service) findCacheEntry(ctx context.Context, match cacheEntryMatch) (*ent.CacheEntry, error) {
-	query := s.db.CacheEntry.Query().
-		Where(
-			cacheentry.Version(match.version),
-			cacheentry.Scope(match.scope),
-			cacheentry.RepoId(match.repoID),
-		)
-	if match.prefix {
-		query = query.Where(cachekey.Prefix(match.key)).Order(cacheentry.ByUpdatedAt(sql.OrderDesc()))
-	} else {
-		query = query.Where(cachekey.Exact(match.key))
-	}
-
-	cacheEntry, err := query.First(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("query cache entry: %w", err)
-	}
-	return cacheEntry, nil
 }
 
 func (s *Service) openMerged(ctx context.Context, location *ent.StorageLocation) (io.ReadCloser, error) {
