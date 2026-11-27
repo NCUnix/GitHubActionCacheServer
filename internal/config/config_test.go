@@ -22,6 +22,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION", "")
 	t.Setenv("DB_DRIVER", "")
 	t.Setenv("DB_SQLITE_PATH", "")
+	t.Setenv("DB_SQLITE_SYNCHRONOUS", "")
 	t.Setenv("DB_POSTGRES_URL", "")
 	t.Setenv("DB_POSTGRES_SSLMODE", "")
 	t.Setenv("DB_MYSQL_TLS", "")
@@ -62,6 +63,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.False(t, cfg.Auth.SkipTokenValidation)
 	require.Equal(t, "sqlite", cfg.DB.Driver)
 	require.Equal(t, ".data/sqlite.db", cfg.DB.SQLitePath)
+	require.Equal(t, "full", cfg.DB.SQLiteSynchronous)
 	require.Equal(t, DefaultDBPostgresSSLMode, cfg.DB.PostgresSSLMode)
 	require.Equal(t, DefaultDBMySQLTLS, cfg.DB.MySQLTLS)
 	require.Equal(t, "filesystem", cfg.Storage.Driver)
@@ -100,6 +102,7 @@ func TestLoadFromEnv(t *testing.T) {
 	t.Setenv("SKIP_TOKEN_VALIDATION", "true")
 	t.Setenv("UNSAFE_ALLOW_DIRECT_DOWNLOADS_WITHOUT_TOKEN_VALIDATION", "true")
 	t.Setenv("DB_DRIVER", "postgres")
+	t.Setenv("DB_SQLITE_SYNCHRONOUS", "NORMAL")
 	t.Setenv("DB_POSTGRES_URL", "postgres://example")
 	t.Setenv("DB_POSTGRES_SSLMODE", "VERIFY-FULL")
 	t.Setenv("DB_MYSQL_TLS", "TRUE")
@@ -135,6 +138,7 @@ func TestLoadFromEnv(t *testing.T) {
 	require.Equal(t, "https://keys.example/jwks", cfg.Auth.TokenJWKSURL)
 	require.True(t, cfg.Auth.SkipTokenValidation)
 	require.Equal(t, "postgres", cfg.DB.Driver)
+	require.Equal(t, "normal", cfg.DB.SQLiteSynchronous)
 	require.Equal(t, "postgres://example", cfg.DB.PostgresURL)
 	require.Equal(t, "verify-full", cfg.DB.PostgresSSLMode)
 	require.Equal(t, "true", cfg.DB.MySQLTLS)
@@ -293,11 +297,12 @@ func TestLoadRejectsMalformedS3UploadPartSize(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsInvalidDatabaseTLSModes(t *testing.T) {
+func TestLoadRejectsInvalidDatabaseModes(t *testing.T) {
 	tests := []struct {
 		key   string
 		value string
 	}{
+		{key: "DB_SQLITE_SYNCHRONOUS", value: "off"},
 		{key: "DB_POSTGRES_SSLMODE", value: "sometimes"},
 		{key: "DB_MYSQL_TLS", value: "required"},
 	}

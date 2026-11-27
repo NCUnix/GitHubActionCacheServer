@@ -120,6 +120,7 @@ required for saves; scopes with permission `>= 1` are used for restores.
 |------------------------|-------------------|-------------------------------------------------------|
 | `DB_DRIVER`            | `sqlite`          | `sqlite`, `postgres`, or `mysql`.                     |
 | `DB_SQLITE_PATH`       | `.data/sqlite.db` | SQLite database path.                                 |
+| `DB_SQLITE_SYNCHRONOUS` | `FULL`          | SQLite writer sync mode. `NORMAL` may lose recent commits after a system crash or power loss. |
 | `DB_POSTGRES_URL`      | empty             | Full PostgreSQL DSN.                                  |
 | `DB_POSTGRES_DATABASE` | empty             | PostgreSQL database when not using `DB_POSTGRES_URL`. |
 | `DB_POSTGRES_HOST`     | empty             | PostgreSQL host when not using `DB_POSTGRES_URL`.     |

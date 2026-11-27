@@ -82,7 +82,7 @@ func TestOpenAndMigrateSQLiteEnablesWALAndForeignKeysOnEveryConnection(t *testin
 		Exec(ctx)
 	require.True(t, ent.IsConstraintError(err), "expected foreign key violation, got %v", err)
 
-	drv, err := openSQLiteDriver(ctx, dbPath)
+	drv, err := openSQLiteDriver(ctx, dbPath, "")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, drv.Close())
@@ -117,6 +117,36 @@ func TestOpenAndMigrateSQLiteEnablesWALAndForeignKeysOnEveryConnection(t *testin
 	}
 }
 
+func TestSQLiteWriterAppliesSynchronousOnReconnect(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode string
+		want int
+	}{
+		{name: "default", want: 2},
+		{name: "normal", mode: "normal", want: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := t.Context()
+			opened, err := openDatabase(ctx, config.DBConfig{
+				Driver:            DriverSQLite,
+				SQLitePath:        filepath.Join(t.TempDir(), "cache-server.db"),
+				SQLiteSynchronous: test.mode,
+			})
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, opened.client.Close())
+			})
+
+			writer := opened.sqlDB
+			writer.SetMaxIdleConns(0)
+			var synchronous int
+			require.NoError(t, writer.QueryRowContext(ctx, "PRAGMA synchronous").Scan(&synchronous))
+			require.Equal(t, test.want, synchronous)
+		})
+	}
+}
+
 func TestSQLiteReadPoolSeesCommittedWrites(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(t.TempDir(), "cache-server.db")
@@ -128,7 +158,7 @@ func TestSQLiteReadPoolSeesCommittedWrites(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, migrated.Close())
 
-	drv, err := openSQLiteDriver(ctx, dbPath)
+	drv, err := openSQLiteDriver(ctx, dbPath, "")
 	require.NoError(t, err)
 	client := ent.NewClient(ent.Driver(drv))
 	t.Cleanup(func() {

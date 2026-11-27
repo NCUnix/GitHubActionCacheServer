@@ -14,11 +14,12 @@ import (
 )
 
 const (
-	DefaultAddr              = ":3000"
-	DefaultActionsResultsURL = "https://results-receiver.actions.githubusercontent.com"
-	DefaultTokenIssuer       = "https://token.actions.githubusercontent.com"
-	DefaultDBPostgresSSLMode = "prefer"
-	DefaultDBMySQLTLS        = "preferred"
+	DefaultAddr                = ":3000"
+	DefaultActionsResultsURL   = "https://results-receiver.actions.githubusercontent.com"
+	DefaultTokenIssuer         = "https://token.actions.githubusercontent.com"
+	DefaultDBSQLiteSynchronous = "full"
+	DefaultDBPostgresSSLMode   = "prefer"
+	DefaultDBMySQLTLS          = "preferred"
 
 	MinS3UploadPartSizeBytes         = 5 * 1024 * 1024
 	DefaultS3KeyPrefix               = "gh-actions-cache"
@@ -65,7 +66,8 @@ type AuthConfig struct {
 type DBConfig struct {
 	Driver string
 
-	SQLitePath string
+	SQLitePath        string
+	SQLiteSynchronous string
 
 	PostgresURL      string
 	PostgresDatabase string
@@ -123,6 +125,10 @@ type CleanupConfig struct {
 }
 
 func Load() (Config, error) {
+	sqliteSynchronous, err := enumEnv("DB_SQLITE_SYNCHRONOUS", DefaultDBSQLiteSynchronous, "full", "normal")
+	if err != nil {
+		return Config{}, err
+	}
 	postgresSSLMode, err := enumEnv(
 		"DB_POSTGRES_SSLMODE",
 		DefaultDBPostgresSSLMode,
@@ -220,7 +226,8 @@ func Load() (Config, error) {
 		DB: DBConfig{
 			Driver: dbDriver,
 
-			SQLitePath: tools.EnvOrDefault("DB_SQLITE_PATH", ".data/sqlite.db"),
+			SQLitePath:        tools.EnvOrDefault("DB_SQLITE_PATH", ".data/sqlite.db"),
+			SQLiteSynchronous: sqliteSynchronous,
 
 			PostgresURL:      tools.EnvOrDefault("DB_POSTGRES_URL", ""),
 			PostgresDatabase: tools.EnvOrDefault("DB_POSTGRES_DATABASE", ""),

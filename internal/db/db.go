@@ -49,7 +49,7 @@ type openedDatabase struct {
 func openDatabase(ctx context.Context, cfg config.DBConfig) (*openedDatabase, error) {
 	switch cfg.Driver {
 	case DriverSQLite:
-		return openSQLite(ctx, cfg.SQLitePath)
+		return openSQLite(ctx, cfg.SQLitePath, cfg.SQLiteSynchronous)
 	case DriverPostgres:
 		return openPostgres(ctx, cfg)
 	case DriverMySQL:
@@ -109,8 +109,8 @@ func backfillStorageLocationRecency(ctx context.Context, exec sqlExecContext, dr
 	return nil
 }
 
-func openSQLite(ctx context.Context, path string) (*openedDatabase, error) {
-	drv, err := openSQLiteDriver(ctx, path)
+func openSQLite(ctx context.Context, path, synchronous string) (*openedDatabase, error) {
+	drv, err := openSQLiteDriver(ctx, path, synchronous)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func openSQLite(ctx context.Context, path string) (*openedDatabase, error) {
 	}, nil
 }
 
-func openSQLiteDriver(ctx context.Context, path string) (*sqliteDriver, error) {
+func openSQLiteDriver(ctx context.Context, path, synchronous string) (*sqliteDriver, error) {
 	if path == "" {
 		return nil, fmt.Errorf("DB_SQLITE_PATH is required")
 	}
@@ -128,11 +128,18 @@ func openSQLiteDriver(ctx context.Context, path string) (*sqliteDriver, error) {
 	if strings.Contains(path, "?") {
 		return nil, fmt.Errorf("DB_SQLITE_PATH must not contain '?'")
 	}
+	switch synchronous {
+	case "", config.DefaultDBSQLiteSynchronous:
+		synchronous = config.DefaultDBSQLiteSynchronous
+	case "normal":
+	default:
+		return nil, fmt.Errorf("DB_SQLITE_SYNCHRONOUS must be one of full, normal: %q", synchronous)
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("create sqlite directory: %w", err)
 	}
 
-	writeDB, err := openSQLitePool(ctx, path+sqlitePragmas+"&_txlock=immediate", 1)
+	writeDB, err := openSQLitePool(ctx, path+sqlitePragmas+"&_txlock=immediate&_pragma=synchronous("+synchronous+")", 1)
 	if err != nil {
 		return nil, err
 	}
