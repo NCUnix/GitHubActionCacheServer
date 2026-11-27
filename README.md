@@ -175,7 +175,7 @@ composition; verify lifecycle support when using an S3-compatible endpoint.
 | `ENABLE_DIRECT_DOWNLOADS`            | `false`              | When using S3, presigns eligible cache objects instead of proxying their downloads through the server.                    |
 | `DIRECT_DOWNLOAD_URL_TTL_SECONDS`    | `600`                | S3 direct URL lifetime, `1` to `3600` seconds. Shorter limits leaked-URL replay; delayed clients like BuildKit need more. |
 | `DOWNLOAD_URL_SIGNING_SECRET`        | random (SQLite only) | HMAC secret for local signed URLs. Required for PostgreSQL/MySQL; SQLite uses a random key, so restarts void issued URLs. |
-| `CACHE_MERGE_CONCURRENCY`            | CPU count            | Maximum concurrent S3 materializations per replica. Values below `1` fall back to CPU count.                              |
+| `CACHE_MERGE_CONCURRENCY`            | `16`                 | Maximum concurrent S3 materializations per replica. Values below `1` fall back to `16`.                                   |
 | `CACHE_MAX_SIZE_BYTES`               | unset                | Maximum logical cache payload bytes for any backend. Must be a positive integer when set.                                 |
 | `CACHE_FILESYSTEM_MAX_USAGE_PERCENT` | `90`                 | Filesystem volume usage that triggers eviction when no explicit byte budget is set. Range `(0, 100]`.                     |
 

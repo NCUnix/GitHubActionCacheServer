@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/auth"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cachekey"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	entpredicate "github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
@@ -159,10 +159,7 @@ func contentLength(sizeBytes *int64) int64 {
 func NewService(options Options) *Service {
 	mergeConcurrency := options.MergeConcurrency
 	if mergeConcurrency < 1 {
-		mergeConcurrency = runtime.NumCPU()
-	}
-	if mergeConcurrency < 1 {
-		mergeConcurrency = 1
+		mergeConcurrency = config.DefaultMergeConcurrency
 	}
 	mergeCtx, mergeCancel := context.WithCancel(context.Background())
 	composer, _ := options.Storage.(storage.ComposeAdapter)

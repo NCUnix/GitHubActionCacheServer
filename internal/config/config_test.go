@@ -1,7 +1,6 @@
 package config
 
 import (
-	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -77,7 +76,7 @@ func TestLoadDefaults(t *testing.T) {
 	require.False(t, cfg.Cache.EnableDirectDownloads)
 	require.Equal(t, 10*time.Minute, cfg.Cache.DirectDownloadURLTTL)
 	require.Empty(t, cfg.Cache.DownloadURLSigningSecret)
-	require.Equal(t, runtime.NumCPU(), cfg.Cache.MergeConcurrency)
+	require.Equal(t, DefaultMergeConcurrency, cfg.Cache.MergeConcurrency)
 	require.False(t, cfg.Cache.MaxSizeBytesConfigured)
 	require.Zero(t, cfg.Cache.MaxSizeBytes)
 	require.Equal(t, float64(DefaultFilesystemMaxUsagePercent), cfg.Cache.FilesystemMaxUsagePercent)

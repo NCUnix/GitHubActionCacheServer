@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,6 +26,7 @@ const (
 	DefaultS3UploadConcurrency       = 1
 	DefaultS3MultipartAbortTimeout   = 30 * time.Second
 	DefaultFilesystemMaxUsagePercent = 90
+	DefaultMergeConcurrency          = 16
 	DefaultOrphanedStorageGraceHours = 24
 	DefaultCacheOlderThanDays        = 90
 	MaximumCacheOlderThanDays        = 36500
@@ -254,7 +254,7 @@ func Load() (Config, error) {
 			EnableDirectDownloads:     enableDirectDownloads,
 			DirectDownloadURLTTL:      directDownloadURLTTL,
 			DownloadURLSigningSecret:  downloadURLSigningSecret,
-			MergeConcurrency:          positiveIntEnv("CACHE_MERGE_CONCURRENCY", defaultMergeConcurrency()),
+			MergeConcurrency:          positiveIntEnv("CACHE_MERGE_CONCURRENCY", DefaultMergeConcurrency),
 			MaxSizeBytes:              cacheMaxSizeBytes,
 			MaxSizeBytesConfigured:    cacheMaxSizeBytesConfigured,
 			FilesystemMaxUsagePercent: filesystemMaxUsagePercent,
@@ -269,13 +269,6 @@ func Load() (Config, error) {
 		},
 		Debug: tools.ParseBool(tools.EnvOrDefault("DEBUG", "false")),
 	}, nil
-}
-
-func defaultMergeConcurrency() int {
-	if cpus := runtime.NumCPU(); cpus > 0 {
-		return cpus
-	}
-	return 1
 }
 
 func positiveIntEnv(key string, fallback int) int {
