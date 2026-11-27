@@ -775,6 +775,27 @@ func TestReplacementFencesOldLocationUntilLazyReaderCloses(t *testing.T) {
 	require.Zero(t, client.StorageReaderLease.Query().CountX(ctx))
 }
 
+func TestReplacementLocksOldLocationBeforeUpdatingEntry(t *testing.T) {
+	ctx, client, log := testutil.NewRecordingSQLiteClient(t)
+	service := newTestService(t, Options{DB: client, Storage: testutil.NewFilesystemAdapter(t)})
+	scope := writableScope()
+	entry := createMatchedCacheEntry(ctx, client, "entry-id", "key")
+	// A fenced location lets CreateUpload reserve while the entry still points at it.
+	client.StorageLocation.UpdateOneID(entry.LocationId).
+		SetDeletionRequestedAt(time.Now().UnixMilli()).
+		ExecX(ctx)
+
+	upload, err := service.CreateUpload(ctx, "key", "version", scope)
+	require.NoError(t, err)
+	require.NoError(t, service.UploadPart(ctx, upload.UploadID, bytes.NewBufferString("replacement")))
+	log.Reset()
+	_, err = service.CompleteUpload(ctx, "key", "version", scope)
+	require.NoError(t, err)
+
+	require.NotEqual(t, entry.LocationId, client.CacheEntry.GetX(ctx, entry.ID).LocationId)
+	testutil.RequireLocationLockedBeforeCacheEntryWrites(t, log.Lines(), entry.LocationId)
+}
+
 func createLiveCacheEntry(t *testing.T, ctx context.Context, client *ent.Client, adapter storage.Adapter, id, key string) *ent.CacheEntry {
 	t.Helper()
 	entry := createMatchedCacheEntry(ctx, client, id, key)

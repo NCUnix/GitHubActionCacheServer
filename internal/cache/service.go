@@ -935,6 +935,11 @@ func (s *Service) completeUploadRecord(ctx context.Context, currentUpload *ent.U
 	var cacheEntryID string
 	if existingCacheEntry != nil {
 		cacheEntryID = existingCacheEntry.ID
+		if existingCacheEntry.LocationId != "" {
+			if _, err := s.lifecycle.LockLocation(ctx, tx.Client(), existingCacheEntry.LocationId); err != nil {
+				return nil, "", err
+			}
+		}
 		if _, err := tx.CacheEntry.UpdateOneID(existingCacheEntry.ID).
 			SetUpdatedAt(now).
 			SetLocation(location).

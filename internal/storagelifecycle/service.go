@@ -396,6 +396,9 @@ func (s *Service) PurgeDanglingCacheEntry(ctx context.Context, cacheEntryID, loc
 		}
 	}()
 
+	if _, err := s.LockLocation(ctx, tx.Client(), locationID); err != nil {
+		return false, err
+	}
 	deleted, err := tx.CacheEntry.Delete().
 		Where(
 			cacheentry.ID(cacheEntryID),
@@ -406,7 +409,7 @@ func (s *Service) PurgeDanglingCacheEntry(ctx context.Context, cacheEntryID, loc
 		return false, fmt.Errorf("delete dangling cache entry: %w", err)
 	}
 	if deleted > 0 {
-		if _, err := s.FenceDetachedLocation(ctx, tx.Client(), locationID); err != nil {
+		if _, err := s.fenceDetachedLocation(ctx, tx.Client(), locationID); err != nil {
 			return false, err
 		}
 	}
@@ -471,7 +474,7 @@ func (s *Service) PurgeDanglingCacheEntryIfUnchanged(ctx context.Context, cacheE
 		return false, fmt.Errorf("delete conditionally dangling cache entry: %w", err)
 	}
 	if deleted > 0 {
-		if _, err := s.fenceDetachedLocation(ctx, tx.Client(), observed.ID, false); err != nil {
+		if _, err := s.fenceDetachedLocation(ctx, tx.Client(), observed.ID); err != nil {
 			return false, err
 		}
 	}
@@ -535,11 +538,22 @@ func (s *Service) RequestLocationDeletion(ctx context.Context, locationID string
 			return DeletionResult{}, nil
 		}
 	}
+	locked, err := s.LockLocation(ctx, tx.Client(), locationID)
+	if err != nil {
+		return DeletionResult{}, err
+	}
+	if !locked {
+		if err := tx.Commit(); err != nil {
+			return DeletionResult{}, fmt.Errorf("commit missing storage location deletion: %w", err)
+		}
+		committed = true
+		return DeletionResult{}, nil
+	}
 	var result DeletionResult
 	if deleteCacheEntries {
-		result, err = s.detachCacheEntriesAndFence(ctx, tx.Client(), locationID, true)
+		result, err = s.detachCacheEntriesAndFence(ctx, tx.Client(), locationID)
 	} else {
-		result, err = s.FenceDetachedLocation(ctx, tx.Client(), locationID)
+		result, err = s.fenceDetachedLocation(ctx, tx.Client(), locationID)
 	}
 	if err != nil {
 		return DeletionResult{}, err
@@ -620,7 +634,7 @@ func (s *Service) RequestCapacityEviction(ctx context.Context, observed Capacity
 		return CapacityEvictionResult{Pinned: true}, nil
 	}
 
-	result, err := s.detachCacheEntriesAndFence(ctx, tx.Client(), location.ID, false)
+	result, err := s.detachCacheEntriesAndFence(ctx, tx.Client(), location.ID)
 	if err != nil {
 		return CapacityEvictionResult{}, err
 	}
@@ -634,11 +648,13 @@ func (s *Service) RequestCapacityEviction(ctx context.Context, observed Capacity
 	}, nil
 }
 
-func (s *Service) detachCacheEntriesAndFence(ctx context.Context, db *ent.Client, locationID string, lock bool) (DeletionResult, error) {
+// detachCacheEntriesAndFence requires locationID's row lock from LockLocation
+// (or an equivalent claim) in db's transaction.
+func (s *Service) detachCacheEntriesAndFence(ctx context.Context, db *ent.Client, locationID string) (DeletionResult, error) {
 	if _, err := db.CacheEntry.Delete().Where(cacheentry.LocationId(locationID)).Exec(ctx); err != nil {
 		return DeletionResult{}, fmt.Errorf("delete cache entries: %w", err)
 	}
-	return s.fenceDetachedLocation(ctx, db, locationID, lock)
+	return s.fenceDetachedLocation(ctx, db, locationID)
 }
 
 // RequestExpiredLocationDeletion atomically rechecks retention eligibility
@@ -719,7 +735,7 @@ func (s *Service) RequestExpiredLocationDeletion(ctx context.Context, locationID
 	if _, err := tx.CacheEntry.Delete().Where(cacheentry.LocationId(locationID)).Exec(ctx); err != nil {
 		return DeletionResult{}, fmt.Errorf("delete expired cache entries: %w", err)
 	}
-	result, err := s.fenceDetachedLocation(ctx, tx.Client(), locationID, false)
+	result, err := s.fenceDetachedLocation(ctx, tx.Client(), locationID)
 	if err != nil {
 		return DeletionResult{}, err
 	}
@@ -730,24 +746,30 @@ func (s *Service) RequestExpiredLocationDeletion(ctx context.Context, locationID
 	return result, nil
 }
 
-func (s *Service) FenceDetachedLocation(ctx context.Context, db *ent.Client, locationID string) (DeletionResult, error) {
-	return s.fenceDetachedLocation(ctx, db, locationID, true)
+// LockLocation takes locationID's row lock in db's transaction and reports
+// whether the row exists. Every transaction that changes a location's cache
+// entries or reader leases takes it first, so locks are always acquired in
+// location → cache entry → reader lease order; lock several locations in
+// ascending id order.
+func (s *Service) LockLocation(ctx context.Context, db *ent.Client, locationID string) (bool, error) {
+	affected, err := db.StorageLocation.Update().
+		Where(storagelocation.ID(locationID)).
+		AddLeaseVersion(1).
+		Save(ctx)
+	if err != nil {
+		return false, fmt.Errorf("lock storage location: %w", err)
+	}
+	return affected > 0, nil
 }
 
-func (s *Service) fenceDetachedLocation(ctx context.Context, db *ent.Client, locationID string, lock bool) (DeletionResult, error) {
-	if lock {
-		affected, err := db.StorageLocation.Update().
-			Where(storagelocation.ID(locationID)).
-			AddLeaseVersion(1).
-			Save(ctx)
-		if err != nil {
-			return DeletionResult{}, fmt.Errorf("lock storage location for deletion: %w", err)
-		}
-		if affected == 0 {
-			return DeletionResult{}, nil
-		}
-	}
+// FenceDetachedLocation fences locationID once no cache entry references it.
+// The caller must already hold the location's LockLocation row lock in db's
+// transaction, taken before changing any of its cache entries.
+func (s *Service) FenceDetachedLocation(ctx context.Context, db *ent.Client, locationID string) (DeletionResult, error) {
+	return s.fenceDetachedLocation(ctx, db, locationID)
+}
 
+func (s *Service) fenceDetachedLocation(ctx context.Context, db *ent.Client, locationID string) (DeletionResult, error) {
 	hasEntries, err := db.CacheEntry.Query().Where(cacheentry.LocationId(locationID)).Exist(ctx)
 	if err != nil {
 		return DeletionResult{}, fmt.Errorf("query storage location references: %w", err)

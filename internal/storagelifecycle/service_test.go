@@ -579,6 +579,28 @@ func TestPurgeDanglingCacheEntryLeavesSharedLocationAvailable(t *testing.T) {
 	require.Equal(t, location.ID, client.CacheEntry.GetX(ctx, "entry-b").LocationId)
 }
 
+func TestPurgeDanglingCacheEntryLocksLocationBeforeDeletingEntry(t *testing.T) {
+	ctx, client, log := testutil.NewRecordingSQLiteClient(t)
+	location := createLifecycleEntry(ctx, client, "entry", "location", 1)
+	log.Reset()
+
+	deleted, err := New(client).PurgeDanglingCacheEntry(ctx, "entry", location.ID)
+	require.NoError(t, err)
+	require.True(t, deleted)
+	testutil.RequireLocationLockedBeforeCacheEntryWrites(t, log.Lines(), location.ID)
+}
+
+func TestRequestLocationDeletionLocksLocationBeforeDeletingEntries(t *testing.T) {
+	ctx, client, log := testutil.NewRecordingSQLiteClient(t)
+	location := createLifecycleEntry(ctx, client, "entry", "location", 1)
+	log.Reset()
+
+	result, err := New(client).RequestLocationDeletion(ctx, location.ID, true, false)
+	require.NoError(t, err)
+	require.True(t, result.Fenced)
+	testutil.RequireLocationLockedBeforeCacheEntryWrites(t, log.Lines(), location.ID)
+}
+
 func TestConditionalDanglingPurgeTreatsReaderLeaseVersionChangeAsStale(t *testing.T) {
 	ctx, client, _ := testutil.NewSQLiteFilesystem(t)
 	service := New(client)

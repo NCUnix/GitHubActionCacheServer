@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 
 	"entgo.io/ent/dialect/sql"
@@ -265,10 +266,20 @@ func (h *Handler) deleteManagementCacheEntryBatch(ctx context.Context, predicate
 		committed = true
 		return 0, nil
 	}
-	if _, err := tx.CacheEntry.Delete().Where(cacheEntryIDs(entries)...).Exec(ctx); err != nil {
+	locationIDs := cacheEntryLocationIDs(entries)
+	slices.Sort(locationIDs)
+	for _, locationID := range locationIDs {
+		if _, err := h.lifecycle.LockLocation(ctx, tx.Client(), locationID); err != nil {
+			return 0, err
+		}
+	}
+	// Entries moved to another location before the locks were taken are left for the next batch.
+	if _, err := tx.CacheEntry.Delete().
+		Where(append(cacheEntryIDs(entries), cacheentry.LocationIdIn(locationIDs...))...).
+		Exec(ctx); err != nil {
 		return 0, fmt.Errorf("delete management cache entries: %w", err)
 	}
-	for _, locationID := range cacheEntryLocationIDs(entries) {
+	for _, locationID := range locationIDs {
 		if _, err := h.lifecycle.FenceDetachedLocation(ctx, tx.Client(), locationID); err != nil {
 			return 0, err
 		}

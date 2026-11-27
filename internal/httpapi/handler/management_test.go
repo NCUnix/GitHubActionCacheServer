@@ -83,3 +83,33 @@ func TestDeleteManagementCacheEntriesCommitsAndResumesInBatches(t *testing.T) {
 	require.NotNil(t, client.StorageLocation.GetX(ctx, sharedLocation.ID).DeletionRequestedAt)
 	require.True(t, client.CacheEntry.Query().Where(cacheentry.ID("retained-entry")).ExistX(ctx))
 }
+
+func TestDeleteManagementCacheEntriesLocksLocationsInIDOrderBeforeDeleting(t *testing.T) {
+	ctx, client, log := testutil.NewRecordingSQLiteClient(t)
+	handler := New(Options{DB: client, Lifecycle: storagelifecycle.New(client)})
+	// Entries are created so the batch query sees location-b before location-a.
+	for _, ids := range [][2]string{{"entry-1", "location-b"}, {"entry-2", "location-a"}} {
+		location := client.StorageLocation.Create().
+			SetID(ids[1]).
+			SetFolderName(ids[1] + "-folder").
+			SetPartCount(1).
+			SaveX(ctx)
+		client.CacheEntry.Create().
+			SetID(ids[0]).
+			SetKey("key").
+			SetVersion("version").
+			SetScope("scope").
+			SetRepoId("repo").
+			SetUpdatedAt(0).
+			SetLocation(location).
+			SaveX(ctx)
+	}
+	log.Reset()
+
+	require.NoError(t, handler.deleteManagementCacheEntries(ctx, []entpredicate.CacheEntry{cacheentry.RepoId("repo")}))
+	require.Zero(t, client.CacheEntry.Query().CountX(ctx))
+	lines := log.Lines()
+	testutil.RequireLocationLockedBeforeCacheEntryWrites(t, lines, "location-a")
+	testutil.RequireLocationLockedBeforeCacheEntryWrites(t, lines, "location-b")
+	require.Less(t, testutil.LocationLockIndex(lines, "location-a"), testutil.LocationLockIndex(lines, "location-b"))
+}
