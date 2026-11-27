@@ -14,6 +14,8 @@ type Tx struct {
 	config
 	// CacheEntry is the client for interacting with the CacheEntry builders.
 	CacheEntry *CacheEntryClient
+	// JobLock is the client for interacting with the JobLock builders.
+	JobLock *JobLockClient
 	// StorageDeletion is the client for interacting with the StorageDeletion builders.
 	StorageDeletion *StorageDeletionClient
 	// StorageLocation is the client for interacting with the StorageLocation builders.
@@ -154,6 +156,7 @@ func (tx *Tx) Client() *Client {
 
 func (tx *Tx) init() {
 	tx.CacheEntry = NewCacheEntryClient(tx.config)
+	tx.JobLock = NewJobLockClient(tx.config)
 	tx.StorageDeletion = NewStorageDeletionClient(tx.config)
 	tx.StorageLocation = NewStorageLocationClient(tx.config)
 	tx.StorageReaderLease = NewStorageReaderLeaseClient(tx.config)

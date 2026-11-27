@@ -74,6 +74,16 @@ var (
 			},
 		},
 	}
+	// JobLocksColumns holds the columns for the "job_locks" table.
+	JobLocksColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Size: 64, SchemaType: map[string]string{"mysql": "varchar(64)", "postgres": "text", "sqlite3": "text"}},
+	}
+	// JobLocksTable holds the schema information for the "job_locks" table.
+	JobLocksTable = &schema.Table{
+		Name:       "job_locks",
+		Columns:    JobLocksColumns,
+		PrimaryKey: []*schema.Column{JobLocksColumns[0]},
+	}
 	// StorageDeletionsColumns holds the columns for the "storage_deletions" table.
 	StorageDeletionsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -234,6 +244,7 @@ var (
 	// Tables holds all the tables in the schema.
 	Tables = []*schema.Table{
 		CacheEntriesTable,
+		JobLocksTable,
 		StorageDeletionsTable,
 		StorageLocationsTable,
 		StorageReaderLeasesTable,
@@ -245,6 +256,9 @@ func init() {
 	CacheEntriesTable.ForeignKeys[0].RefTable = StorageLocationsTable
 	CacheEntriesTable.Annotation = &entsql.Annotation{
 		Table: "cache_entries",
+	}
+	JobLocksTable.Annotation = &entsql.Annotation{
+		Table: "job_locks",
 	}
 	StorageDeletionsTable.Annotation = &entsql.Annotation{
 		Table: "storage_deletions",

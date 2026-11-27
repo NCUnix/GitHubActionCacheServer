@@ -16,6 +16,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/joblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
@@ -29,6 +30,8 @@ type Client struct {
 	Schema *migrate.Schema
 	// CacheEntry is the client for interacting with the CacheEntry builders.
 	CacheEntry *CacheEntryClient
+	// JobLock is the client for interacting with the JobLock builders.
+	JobLock *JobLockClient
 	// StorageDeletion is the client for interacting with the StorageDeletion builders.
 	StorageDeletion *StorageDeletionClient
 	// StorageLocation is the client for interacting with the StorageLocation builders.
@@ -49,6 +52,7 @@ func NewClient(opts ...Option) *Client {
 func (c *Client) init() {
 	c.Schema = migrate.NewSchema(c.driver)
 	c.CacheEntry = NewCacheEntryClient(c.config)
+	c.JobLock = NewJobLockClient(c.config)
 	c.StorageDeletion = NewStorageDeletionClient(c.config)
 	c.StorageLocation = NewStorageLocationClient(c.config)
 	c.StorageReaderLease = NewStorageReaderLeaseClient(c.config)
@@ -146,6 +150,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		ctx:                ctx,
 		config:             cfg,
 		CacheEntry:         NewCacheEntryClient(cfg),
+		JobLock:            NewJobLockClient(cfg),
 		StorageDeletion:    NewStorageDeletionClient(cfg),
 		StorageLocation:    NewStorageLocationClient(cfg),
 		StorageReaderLease: NewStorageReaderLeaseClient(cfg),
@@ -170,6 +175,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		ctx:                ctx,
 		config:             cfg,
 		CacheEntry:         NewCacheEntryClient(cfg),
+		JobLock:            NewJobLockClient(cfg),
 		StorageDeletion:    NewStorageDeletionClient(cfg),
 		StorageLocation:    NewStorageLocationClient(cfg),
 		StorageReaderLease: NewStorageReaderLeaseClient(cfg),
@@ -202,21 +208,23 @@ func (c *Client) Close() error {
 // Use adds the mutation hooks to all the entity clients.
 // In order to add hooks to a specific client, call: `client.Node.Use(...)`.
 func (c *Client) Use(hooks ...Hook) {
-	c.CacheEntry.Use(hooks...)
-	c.StorageDeletion.Use(hooks...)
-	c.StorageLocation.Use(hooks...)
-	c.StorageReaderLease.Use(hooks...)
-	c.Upload.Use(hooks...)
+	for _, n := range []interface{ Use(...Hook) }{
+		c.CacheEntry, c.JobLock, c.StorageDeletion, c.StorageLocation,
+		c.StorageReaderLease, c.Upload,
+	} {
+		n.Use(hooks...)
+	}
 }
 
 // Intercept adds the query interceptors to all the entity clients.
 // In order to add interceptors to a specific client, call: `client.Node.Intercept(...)`.
 func (c *Client) Intercept(interceptors ...Interceptor) {
-	c.CacheEntry.Intercept(interceptors...)
-	c.StorageDeletion.Intercept(interceptors...)
-	c.StorageLocation.Intercept(interceptors...)
-	c.StorageReaderLease.Intercept(interceptors...)
-	c.Upload.Intercept(interceptors...)
+	for _, n := range []interface{ Intercept(...Interceptor) }{
+		c.CacheEntry, c.JobLock, c.StorageDeletion, c.StorageLocation,
+		c.StorageReaderLease, c.Upload,
+	} {
+		n.Intercept(interceptors...)
+	}
 }
 
 // Mutate implements the ent.Mutator interface.
@@ -224,6 +232,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 	switch m := m.(type) {
 	case *CacheEntryMutation:
 		return c.CacheEntry.mutate(ctx, m)
+	case *JobLockMutation:
+		return c.JobLock.mutate(ctx, m)
 	case *StorageDeletionMutation:
 		return c.StorageDeletion.mutate(ctx, m)
 	case *StorageLocationMutation:
@@ -383,6 +393,139 @@ func (c *CacheEntryClient) mutate(ctx context.Context, m *CacheEntryMutation) (V
 		return (&CacheEntryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown CacheEntry mutation op: %q", m.Op())
+	}
+}
+
+// JobLockClient is a client for the JobLock schema.
+type JobLockClient struct {
+	config
+}
+
+// NewJobLockClient returns a client for the JobLock from the given config.
+func NewJobLockClient(c config) *JobLockClient {
+	return &JobLockClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `joblock.Hooks(f(g(h())))`.
+func (c *JobLockClient) Use(hooks ...Hook) {
+	c.hooks.JobLock = append(c.hooks.JobLock, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `joblock.Intercept(f(g(h())))`.
+func (c *JobLockClient) Intercept(interceptors ...Interceptor) {
+	c.inters.JobLock = append(c.inters.JobLock, interceptors...)
+}
+
+// Create returns a builder for creating a JobLock entity.
+func (c *JobLockClient) Create() *JobLockCreate {
+	mutation := newJobLockMutation(c.config, OpCreate)
+	return &JobLockCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of JobLock entities.
+func (c *JobLockClient) CreateBulk(builders ...*JobLockCreate) *JobLockCreateBulk {
+	return &JobLockCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *JobLockClient) MapCreateBulk(slice any, setFunc func(*JobLockCreate, int)) *JobLockCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &JobLockCreateBulk{err: fmt.Errorf("calling to JobLockClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*JobLockCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &JobLockCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for JobLock.
+func (c *JobLockClient) Update() *JobLockUpdate {
+	mutation := newJobLockMutation(c.config, OpUpdate)
+	return &JobLockUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *JobLockClient) UpdateOne(_m *JobLock) *JobLockUpdateOne {
+	mutation := newJobLockMutation(c.config, OpUpdateOne, withJobLock(_m))
+	return &JobLockUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *JobLockClient) UpdateOneID(id string) *JobLockUpdateOne {
+	mutation := newJobLockMutation(c.config, OpUpdateOne, withJobLockID(id))
+	return &JobLockUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for JobLock.
+func (c *JobLockClient) Delete() *JobLockDelete {
+	mutation := newJobLockMutation(c.config, OpDelete)
+	return &JobLockDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *JobLockClient) DeleteOne(_m *JobLock) *JobLockDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *JobLockClient) DeleteOneID(id string) *JobLockDeleteOne {
+	builder := c.Delete().Where(joblock.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &JobLockDeleteOne{builder}
+}
+
+// Query returns a query builder for JobLock.
+func (c *JobLockClient) Query() *JobLockQuery {
+	return &JobLockQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeJobLock},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a JobLock entity by its id.
+func (c *JobLockClient) Get(ctx context.Context, id string) (*JobLock, error) {
+	return c.Query().Where(joblock.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *JobLockClient) GetX(ctx context.Context, id string) *JobLock {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *JobLockClient) Hooks() []Hook {
+	return c.hooks.JobLock
+}
+
+// Interceptors returns the client interceptors.
+func (c *JobLockClient) Interceptors() []Interceptor {
+	return c.inters.JobLock
+}
+
+func (c *JobLockClient) mutate(ctx context.Context, m *JobLockMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&JobLockCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&JobLockUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&JobLockUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&JobLockDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown JobLock mutation op: %q", m.Op())
 	}
 }
 
@@ -969,11 +1112,11 @@ func (c *UploadClient) mutate(ctx context.Context, m *UploadMutation) (Value, er
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		CacheEntry, StorageDeletion, StorageLocation, StorageReaderLease,
+		CacheEntry, JobLock, StorageDeletion, StorageLocation, StorageReaderLease,
 		Upload []ent.Hook
 	}
 	inters struct {
-		CacheEntry, StorageDeletion, StorageLocation, StorageReaderLease,
+		CacheEntry, JobLock, StorageDeletion, StorageLocation, StorageReaderLease,
 		Upload []ent.Interceptor
 	}
 )

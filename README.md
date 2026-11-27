@@ -130,6 +130,7 @@ required for saves; scopes with permission `>= 1` are used for restores.
 | `DB_MYSQL_TLS`         | `preferred`       | MySQL TLS mode.                                       |
 
 Schema migrations run automatically at startup and are serialized across instances.
+MySQL requires 8.0.1+ because background job locks use `SELECT ... FOR UPDATE SKIP LOCKED`.
 
 `DB_POSTGRES_URL` sets its own TLS parameters and ignores
 `DB_POSTGRES_SSLMODE`. The opportunistic defaults permit plaintext fallback; use

@@ -21,6 +21,18 @@ func (f CacheEntryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CacheEntryMutation", m)
 }
 
+// The JobLockFunc type is an adapter to allow the use of ordinary
+// function as JobLock mutator.
+type JobLockFunc func(context.Context, *ent.JobLockMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f JobLockFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.JobLockMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.JobLockMutation", m)
+}
+
 // The StorageDeletionFunc type is an adapter to allow the use of ordinary
 // function as StorageDeletion mutator.
 type StorageDeletionFunc func(context.Context, *ent.StorageDeletionMutation) (ent.Value, error)

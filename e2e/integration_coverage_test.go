@@ -19,6 +19,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cleanup"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/upload"
@@ -316,6 +317,69 @@ func TestExternalMySQLCapacityEviction(t *testing.T) {
 	runExternalCapacityEviction(t, dbCfg)
 }
 
+func TestExternalPostgresCapacityEvictionSkipsWhileLocked(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
+	if !ok {
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
+	}
+
+	runExternalCapacityEvictionSkipsWhileLocked(t, dbCfg)
+}
+
+func TestExternalMySQLCapacityEvictionSkipsWhileLocked(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL integration coverage")
+	}
+
+	runExternalCapacityEvictionSkipsWhileLocked(t, dbCfg)
+}
+
+func TestExternalPostgresJobLockExclusion(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
+	if !ok {
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
+	}
+
+	runExternalJobLockExclusion(t, dbCfg)
+}
+
+func TestExternalPgBouncerJobLockExclusion(t *testing.T) {
+	dbCfg, ok := externalPgBouncerConfig()
+	if !ok {
+		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer integration coverage")
+	}
+
+	runExternalJobLockExclusion(t, dbCfg)
+}
+
+func TestExternalMySQLJobLockExclusion(t *testing.T) {
+	dbCfg, ok := externalMySQLConfig()
+	if !ok {
+		t.Skip("set E2E_MYSQL_HOST, E2E_MYSQL_DATABASE and E2E_MYSQL_USER to run MySQL integration coverage")
+	}
+
+	runExternalJobLockExclusion(t, dbCfg)
+}
+
+func TestExternalPostgresJobLockLoss(t *testing.T) {
+	dbCfg, ok := externalPostgresConfig()
+	if !ok {
+		t.Skip("set E2E_POSTGRES_URL to run PostgreSQL integration coverage")
+	}
+
+	runExternalPostgresJobLockLoss(t, dbCfg)
+}
+
+func TestExternalPgBouncerJobLockLoss(t *testing.T) {
+	dbCfg, ok := externalPgBouncerConfig()
+	if !ok {
+		t.Skip("set E2E_PGBOUNCER_URL to run PgBouncer integration coverage")
+	}
+
+	runExternalPostgresJobLockLoss(t, dbCfg)
+}
+
 func TestExternalPostgresCleanupRetention(t *testing.T) {
 	dbCfg, ok := externalPostgresConfig()
 	if !ok {
@@ -568,6 +632,111 @@ func runExternalCapacityEviction(t *testing.T, dbCfg config.DBConfig) {
 	require.NotNil(t, client.StorageLocation.GetX(ctx, old.ID).DeletionRequestedAt)
 	require.Nil(t, client.StorageLocation.GetX(ctx, downloaded.ID).DeletionRequestedAt)
 	require.Nil(t, client.StorageLocation.GetX(ctx, recent.ID).DeletionRequestedAt)
+}
+
+func runExternalCapacityEvictionSkipsWhileLocked(t *testing.T, dbCfg config.DBConfig) {
+	t.Helper()
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, dbCfg)
+	filesystem := testutil.NewFilesystemAdapter(t)
+	old := createExternalCapacityLocation(ctx, client, "capacity-old", 100, nil)
+	downloadedAt := int64(200)
+	createExternalCapacityLocation(ctx, client, "capacity-downloaded", 50, &downloadedAt)
+	createExternalCapacityLocation(ctx, client, "capacity-recent", 300, nil)
+	service := storagecapacity.NewService(storagecapacity.Options{
+		DB:      client,
+		Storage: filesystem,
+		Config: config.CacheConfig{
+			MaxSizeBytes:              17,
+			MaxSizeBytesConfigured:    true,
+			FilesystemMaxUsagePercent: 90,
+		},
+		Lifecycle: storagelifecycle.New(client),
+		Locker:    dblock.New(client),
+	})
+	holder, err := dblock.New(client).TryAcquire(ctx, "capacity-eviction")
+	require.NoError(t, err)
+	require.NotNil(t, holder)
+
+	result, err := service.Enforce(ctx)
+
+	require.NoError(t, err)
+	require.Zero(t, result.ClaimedLocations)
+	require.Nil(t, client.StorageLocation.GetX(ctx, old.ID).DeletionRequestedAt)
+
+	require.NoError(t, holder.Release())
+	result, err = service.Enforce(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.ClaimedLocations)
+}
+
+func runExternalJobLockExclusion(t *testing.T, cfg config.DBConfig) {
+	t.Helper()
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, cfg)
+	name := uniqueIntegrationCacheKey("job-lock")
+	first := dblock.New(client)
+	second := dblock.New(client)
+
+	held, err := first.TryAcquire(ctx, name)
+	require.NoError(t, err)
+	require.NotNil(t, held)
+	contended, err := second.TryAcquire(ctx, name)
+	require.NoError(t, err)
+	require.Nil(t, contended)
+	require.NoError(t, held.Check(ctx))
+	require.NoError(t, held.Release())
+
+	reacquired, err := second.TryAcquire(ctx, name)
+	require.NoError(t, err)
+	require.NotNil(t, reacquired)
+	require.NoError(t, reacquired.Release())
+}
+
+func runExternalPostgresJobLockLoss(t *testing.T, cfg config.DBConfig) {
+	t.Helper()
+
+	ctx := context.Background()
+	client := openExternalDB(t, ctx, cfg)
+	sqlDB := openExternalSQLDB(t, ctx, cfg)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	name := uniqueIntegrationCacheKey("job-lock-loss")
+
+	held, err := dblock.New(client).TryAcquire(ctx, name)
+	require.NoError(t, err)
+	require.NotNil(t, held)
+
+	rows, err := sqlDB.QueryContext(ctx, `select pid from pg_stat_activity
+		where datname = current_database()
+			and pid <> pg_backend_pid()
+			and state = 'idle in transaction'
+			and query ilike '%job_locks%'`)
+	require.NoError(t, err)
+	var pids []int64
+	for rows.Next() {
+		var pid int64
+		require.NoError(t, rows.Scan(&pid))
+		pids = append(pids, pid)
+	}
+	require.NoError(t, rows.Err())
+	require.NoError(t, rows.Close())
+	require.Len(t, pids, 1)
+
+	var terminated bool
+	require.NoError(t, sqlDB.QueryRowContext(ctx, "select pg_terminate_backend($1)", pids[0]).Scan(&terminated))
+	require.True(t, terminated)
+	requireExternalRowsEventually(t, ctx, sqlDB, "terminated job lock backend did not exit",
+		"select count(*) from (select 1) s where not exists (select 1 from pg_stat_activity where pid = $1)", pids[0])
+
+	require.Error(t, held.Check(ctx))
+	_ = held.Release()
+	reacquired, err := dblock.New(client).TryAcquire(ctx, name)
+	require.NoError(t, err)
+	require.NotNil(t, reacquired)
+	require.NoError(t, reacquired.Release())
 }
 
 func createExternalCapacityLocation(ctx context.Context, client *ent.Client, id string, updatedAt int64, lastDownloadedAt *int64) *ent.StorageLocation {

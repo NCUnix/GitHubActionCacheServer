@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
@@ -23,6 +24,7 @@ const (
 	maximumFailureRetry     = 10 * time.Minute
 	targetBudgetNumerator   = int64(9)
 	targetBudgetDenominator = int64(10)
+	evictionLockName        = "capacity-eviction"
 )
 
 var ErrUnresolvedSizes = errors.New("capacity eviction requires every active storage location size")
@@ -32,6 +34,7 @@ type Options struct {
 	Storage   storage.Adapter
 	Config    config.CacheConfig
 	Lifecycle *storagelifecycle.Service
+	Locker    *dblock.Locker
 	Logger    *zerolog.Logger
 }
 
@@ -55,6 +58,7 @@ type Service struct {
 	db                   *ent.Client
 	filesystem           storage.FilesystemUsageAdapter
 	lifecycle            *storagelifecycle.Service
+	locker               *dblock.Locker
 	logger               zerolog.Logger
 	explicitBudgetBytes  int64
 	explicitBudget       bool
@@ -91,6 +95,7 @@ func NewService(options Options) *Service {
 		db:                   options.DB,
 		filesystem:           filesystem,
 		lifecycle:            lifecycle,
+		locker:               options.Locker,
 		logger:               logger,
 		explicitBudgetBytes:  options.Config.MaxSizeBytes,
 		explicitBudget:       options.Config.MaxSizeBytesConfigured,
@@ -175,13 +180,25 @@ func (s *Service) Run(ctx context.Context, ready <-chan struct{}) {
 	}
 }
 
-func (s *Service) Enforce(ctx context.Context) (Result, error) {
+func (s *Service) Enforce(ctx context.Context) (result Result, err error) {
 	if !s.enabled {
 		return Result{}, nil
 	}
 	if s.db == nil || s.lifecycle == nil {
 		return Result{}, fmt.Errorf("capacity eviction dependencies are required")
 	}
+
+	lock, err := s.locker.TryAcquire(ctx, evictionLockName)
+	if err != nil {
+		return Result{}, fmt.Errorf("acquire capacity eviction lock: %w", err)
+	}
+	if lock == nil {
+		s.logger.Debug().Msg("capacity eviction skipped because another replica is running it")
+		return Result{}, nil
+	}
+	defer func() {
+		err = errors.Join(err, lock.Release())
+	}()
 
 	unresolved, err := s.db.StorageLocation.Query().
 		Where(
@@ -196,7 +213,7 @@ func (s *Service) Enforce(ctx context.Context) (Result, error) {
 		return Result{UnresolvedLocations: unresolved}, fmt.Errorf("%w: %d locations", ErrUnresolvedSizes, unresolved)
 	}
 
-	result, err := s.currentBudgetUsage(ctx)
+	result, err = s.currentBudgetUsage(ctx)
 	if err != nil {
 		return Result{}, err
 	}
@@ -207,6 +224,11 @@ func (s *Service) Enforce(ctx context.Context) (Result, error) {
 
 	var cursor *capacityCursor
 	for result.UsageAfterBytes > result.TargetBytes {
+		if cursor != nil {
+			if err := lock.Check(ctx); err != nil {
+				return result, fmt.Errorf("stop capacity eviction: %w", err)
+			}
+		}
 		candidates, err := s.capacityCandidates(ctx, cursor)
 		if err != nil {
 			return result, err

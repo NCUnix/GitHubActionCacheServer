@@ -9,6 +9,9 @@ import (
 // CacheEntry is the predicate function for cacheentry builders.
 type CacheEntry func(*sql.Selector)
 
+// JobLock is the predicate function for joblock builders.
+type JobLock func(*sql.Selector)
+
 // StorageDeletion is the predicate function for storagedeletion builders.
 type StorageDeletion func(*sql.Selector)
 

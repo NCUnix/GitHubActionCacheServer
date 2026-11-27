@@ -4,6 +4,7 @@ package ent
 
 import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/joblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/schema"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
@@ -82,6 +83,26 @@ func init() {
 		return func(repoId string) error {
 			for _, fn := range fns {
 				if err := fn(repoId); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	joblockFields := schema.JobLock{}.Fields()
+	_ = joblockFields
+	// joblockDescID is the schema descriptor for id field.
+	joblockDescID := joblockFields[0].Descriptor()
+	// joblock.IDValidator is a validator for the "id" field. It is called by the builders before save.
+	joblock.IDValidator = func() func(string) error {
+		validators := joblockDescID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(id string) error {
+			for _, fn := range fns {
+				if err := fn(id); err != nil {
 					return err
 				}
 			}

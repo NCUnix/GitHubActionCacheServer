@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/joblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagereaderlease"
@@ -78,6 +79,7 @@ func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
 			cacheentry.Table:         cacheentry.ValidColumn,
+			joblock.Table:            joblock.ValidColumn,
 			storagedeletion.Table:    storagedeletion.ValidColumn,
 			storagelocation.Table:    storagelocation.ValidColumn,
 			storagereaderlease.Table: storagereaderlease.ValidColumn,

@@ -16,6 +16,7 @@ import (
 	"github.com/NCUnix/GitHubActionCacheServer/internal/cleanup"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/db"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/httpapi"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/metrics"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/storage"
@@ -68,11 +69,17 @@ func main() {
 	}
 	metricsRegistry := metrics.New(dbClient)
 	lifecycleService := storagelifecycle.NewWithOptions(dbClient, storagelifecycle.Options{DirectDownloadURLTTL: cfg.Cache.DirectDownloadURLTTL})
+	var jobLocker *dblock.Locker
+	// SQLite is single-instance, and a held lock transaction would occupy its only connection and deadlock.
+	if cfg.DB.Driver != db.DriverSQLite {
+		jobLocker = dblock.New(dbClient)
+	}
 	capacityService := storagecapacity.NewService(storagecapacity.Options{
 		DB:        dbClient,
 		Storage:   storageAdapter,
 		Config:    cfg.Cache,
 		Lifecycle: lifecycleService,
+		Locker:    jobLocker,
 		Logger:    &logger,
 	})
 	cacheService := cache.NewService(cache.Options{
