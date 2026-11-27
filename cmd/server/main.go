@@ -127,6 +127,7 @@ func main() {
 		Storage:   storageAdapter,
 		Config:    cfg.Cleanup,
 		Lifecycle: lifecycleService,
+		Locker:    jobLocker,
 		Logger:    &logger,
 		Metrics:   metricsRegistry,
 	}), logger, storageSizeReady)

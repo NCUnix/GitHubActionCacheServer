@@ -62,6 +62,61 @@ func IDContainsFold(id string) predicate.JobLock {
 	return predicate.JobLock(sql.FieldContainsFold(FieldID, id))
 }
 
+// LastStartedAt applies equality check predicate on the "lastStartedAt" field. It's identical to LastStartedAtEQ.
+func LastStartedAt(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldEQ(FieldLastStartedAt, v))
+}
+
+// LastStartedAtEQ applies the EQ predicate on the "lastStartedAt" field.
+func LastStartedAtEQ(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldEQ(FieldLastStartedAt, v))
+}
+
+// LastStartedAtNEQ applies the NEQ predicate on the "lastStartedAt" field.
+func LastStartedAtNEQ(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldNEQ(FieldLastStartedAt, v))
+}
+
+// LastStartedAtIn applies the In predicate on the "lastStartedAt" field.
+func LastStartedAtIn(vs ...int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldIn(FieldLastStartedAt, vs...))
+}
+
+// LastStartedAtNotIn applies the NotIn predicate on the "lastStartedAt" field.
+func LastStartedAtNotIn(vs ...int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldNotIn(FieldLastStartedAt, vs...))
+}
+
+// LastStartedAtGT applies the GT predicate on the "lastStartedAt" field.
+func LastStartedAtGT(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldGT(FieldLastStartedAt, v))
+}
+
+// LastStartedAtGTE applies the GTE predicate on the "lastStartedAt" field.
+func LastStartedAtGTE(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldGTE(FieldLastStartedAt, v))
+}
+
+// LastStartedAtLT applies the LT predicate on the "lastStartedAt" field.
+func LastStartedAtLT(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldLT(FieldLastStartedAt, v))
+}
+
+// LastStartedAtLTE applies the LTE predicate on the "lastStartedAt" field.
+func LastStartedAtLTE(v int64) predicate.JobLock {
+	return predicate.JobLock(sql.FieldLTE(FieldLastStartedAt, v))
+}
+
+// LastStartedAtIsNil applies the IsNil predicate on the "lastStartedAt" field.
+func LastStartedAtIsNil() predicate.JobLock {
+	return predicate.JobLock(sql.FieldIsNull(FieldLastStartedAt))
+}
+
+// LastStartedAtNotNil applies the NotNil predicate on the "lastStartedAt" field.
+func LastStartedAtNotNil() predicate.JobLock {
+	return predicate.JobLock(sql.FieldNotNull(FieldLastStartedAt))
+}
+
 // And groups predicates with the AND operator between them.
 func And(predicates ...predicate.JobLock) predicate.JobLock {
 	return predicate.JobLock(sql.AndPredicates(predicates...))

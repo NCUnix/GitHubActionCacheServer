@@ -77,6 +77,7 @@ var (
 	// JobLocksColumns holds the columns for the "job_locks" table.
 	JobLocksColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Size: 64, SchemaType: map[string]string{"mysql": "varchar(64)", "postgres": "text", "sqlite3": "text"}},
+		{Name: "lastStartedAt", Type: field.TypeInt64, Nullable: true},
 	}
 	// JobLocksTable holds the schema information for the "job_locks" table.
 	JobLocksTable = &schema.Table{

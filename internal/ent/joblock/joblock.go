@@ -11,6 +11,8 @@ const (
 	Label = "job_lock"
 	// FieldID holds the string denoting the id field in the database.
 	FieldID = "id"
+	// FieldLastStartedAt holds the string denoting the laststartedat field in the database.
+	FieldLastStartedAt = "lastStartedAt"
 	// Table holds the table name of the joblock in the database.
 	Table = "job_locks"
 )
@@ -18,6 +20,7 @@ const (
 // Columns holds all SQL columns for joblock fields.
 var Columns = []string{
 	FieldID,
+	FieldLastStartedAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -41,4 +44,9 @@ type OrderOption func(*sql.Selector)
 // ByID orders the results by the id field.
 func ByID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldID, opts...).ToFunc()
+}
+
+// ByLastStartedAt orders the results by the lastStartedAt field.
+func ByLastStartedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastStartedAt, opts...).ToFunc()
 }

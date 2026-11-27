@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/joblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagelocation"
@@ -743,13 +744,15 @@ func (m *CacheEntryMutation) ResetEdge(name string) error {
 // JobLockMutation represents an operation that mutates the JobLock nodes in the graph.
 type JobLockMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*JobLock, error)
-	predicates    []predicate.JobLock
+	op               Op
+	typ              string
+	id               *string
+	lastStartedAt    *int64
+	addlastStartedAt *int64
+	clearedFields    map[string]struct{}
+	done             bool
+	oldValue         func(context.Context) (*JobLock, error)
+	predicates       []predicate.JobLock
 }
 
 var _ ent.Mutation = (*JobLockMutation)(nil)
@@ -856,6 +859,76 @@ func (m *JobLockMutation) IDs(ctx context.Context) ([]string, error) {
 	}
 }
 
+// SetLastStartedAt sets the "lastStartedAt" field.
+func (m *JobLockMutation) SetLastStartedAt(i int64) {
+	m.lastStartedAt = &i
+	m.addlastStartedAt = nil
+}
+
+// LastStartedAt returns the value of the "lastStartedAt" field in the mutation.
+func (m *JobLockMutation) LastStartedAt() (r int64, exists bool) {
+	v := m.lastStartedAt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastStartedAt returns the old "lastStartedAt" field's value of the JobLock entity.
+// If the JobLock object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *JobLockMutation) OldLastStartedAt(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastStartedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastStartedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastStartedAt: %w", err)
+	}
+	return oldValue.LastStartedAt, nil
+}
+
+// AddLastStartedAt adds i to the "lastStartedAt" field.
+func (m *JobLockMutation) AddLastStartedAt(i int64) {
+	if m.addlastStartedAt != nil {
+		*m.addlastStartedAt += i
+	} else {
+		m.addlastStartedAt = &i
+	}
+}
+
+// AddedLastStartedAt returns the value that was added to the "lastStartedAt" field in this mutation.
+func (m *JobLockMutation) AddedLastStartedAt() (r int64, exists bool) {
+	v := m.addlastStartedAt
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearLastStartedAt clears the value of the "lastStartedAt" field.
+func (m *JobLockMutation) ClearLastStartedAt() {
+	m.lastStartedAt = nil
+	m.addlastStartedAt = nil
+	m.clearedFields[joblock.FieldLastStartedAt] = struct{}{}
+}
+
+// LastStartedAtCleared returns if the "lastStartedAt" field was cleared in this mutation.
+func (m *JobLockMutation) LastStartedAtCleared() bool {
+	_, ok := m.clearedFields[joblock.FieldLastStartedAt]
+	return ok
+}
+
+// ResetLastStartedAt resets all changes to the "lastStartedAt" field.
+func (m *JobLockMutation) ResetLastStartedAt() {
+	m.lastStartedAt = nil
+	m.addlastStartedAt = nil
+	delete(m.clearedFields, joblock.FieldLastStartedAt)
+}
+
 // Where appends a list predicates to the JobLockMutation builder.
 func (m *JobLockMutation) Where(ps ...predicate.JobLock) {
 	m.predicates = append(m.predicates, ps...)
@@ -890,7 +963,10 @@ func (m *JobLockMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *JobLockMutation) Fields() []string {
-	fields := make([]string, 0, 0)
+	fields := make([]string, 0, 1)
+	if m.lastStartedAt != nil {
+		fields = append(fields, joblock.FieldLastStartedAt)
+	}
 	return fields
 }
 
@@ -898,6 +974,10 @@ func (m *JobLockMutation) Fields() []string {
 // return value indicates that this field was not set, or was not defined in the
 // schema.
 func (m *JobLockMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case joblock.FieldLastStartedAt:
+		return m.LastStartedAt()
+	}
 	return nil, false
 }
 
@@ -905,6 +985,10 @@ func (m *JobLockMutation) Field(name string) (ent.Value, bool) {
 // returned if the mutation operation is not UpdateOne, or the query to the
 // database failed.
 func (m *JobLockMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case joblock.FieldLastStartedAt:
+		return m.OldLastStartedAt(ctx)
+	}
 	return nil, fmt.Errorf("unknown JobLock field %s", name)
 }
 
@@ -913,6 +997,13 @@ func (m *JobLockMutation) OldField(ctx context.Context, name string) (ent.Value,
 // type.
 func (m *JobLockMutation) SetField(name string, value ent.Value) error {
 	switch name {
+	case joblock.FieldLastStartedAt:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastStartedAt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown JobLock field %s", name)
 }
@@ -920,13 +1011,21 @@ func (m *JobLockMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *JobLockMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addlastStartedAt != nil {
+		fields = append(fields, joblock.FieldLastStartedAt)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *JobLockMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case joblock.FieldLastStartedAt:
+		return m.AddedLastStartedAt()
+	}
 	return nil, false
 }
 
@@ -934,13 +1033,26 @@ func (m *JobLockMutation) AddedField(name string) (ent.Value, bool) {
 // the field is not defined in the schema, or if the type mismatched the field
 // type.
 func (m *JobLockMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case joblock.FieldLastStartedAt:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddLastStartedAt(v)
+		return nil
+	}
 	return fmt.Errorf("unknown JobLock numeric field %s", name)
 }
 
 // ClearedFields returns all nullable fields that were cleared during this
 // mutation.
 func (m *JobLockMutation) ClearedFields() []string {
-	return nil
+	var fields []string
+	if m.FieldCleared(joblock.FieldLastStartedAt) {
+		fields = append(fields, joblock.FieldLastStartedAt)
+	}
+	return fields
 }
 
 // FieldCleared returns a boolean indicating if a field with the given name was
@@ -953,12 +1065,22 @@ func (m *JobLockMutation) FieldCleared(name string) bool {
 // ClearField clears the value of the field with the given name. It returns an
 // error if the field is not defined in the schema.
 func (m *JobLockMutation) ClearField(name string) error {
+	switch name {
+	case joblock.FieldLastStartedAt:
+		m.ClearLastStartedAt()
+		return nil
+	}
 	return fmt.Errorf("unknown JobLock nullable field %s", name)
 }
 
 // ResetField resets all changes in the mutation for the field with the given name.
 // It returns an error if the field is not defined in the schema.
 func (m *JobLockMutation) ResetField(name string) error {
+	switch name {
+	case joblock.FieldLastStartedAt:
+		m.ResetLastStartedAt()
+		return nil
+	}
 	return fmt.Errorf("unknown JobLock field %s", name)
 }
 

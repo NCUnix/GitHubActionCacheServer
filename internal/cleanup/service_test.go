@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/storagedeletion"
@@ -479,6 +480,35 @@ func TestRunOrphanedStorageQueuesOnlyExpiredUnreferencedFolders(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, contents.Exists)
 	require.Equal(t, 1, client.StorageDeletion.Query().CountX(ctx))
+}
+
+func TestRunOrphanedStorageRunsOncePerInterval(t *testing.T) {
+	ctx, client, filesystem := testutil.NewSQLiteFilesystem(t)
+	now := time.Now().Truncate(time.Millisecond)
+	adapter := newOrphanTestStorage(filesystem, map[string]time.Time{"orphan": now.Add(-25 * time.Hour)})
+	service := NewService(Options{
+		DB:      client,
+		Storage: adapter,
+		Config:  config.CleanupConfig{OrphanedStorageGracePeriod: 24 * time.Hour},
+		Locker:  dblock.New(client),
+		Now:     func() time.Time { return now },
+	})
+
+	queued, err := service.RunOrphanedStorage(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, queued)
+	client.StorageDeletion.Delete().ExecX(ctx)
+
+	queued, err = service.RunOrphanedStorage(ctx)
+	require.NoError(t, err)
+	require.Zero(t, queued)
+	require.Zero(t, client.StorageDeletion.Query().CountX(ctx))
+	require.Equal(t, 1, adapter.inspectCount("orphan"), "skipped run must not scan storage")
+
+	now = now.Add(orphanedStorageInterval)
+	queued, err = service.RunOrphanedStorage(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, queued)
 }
 
 func TestRunOrphanedStorageRechecksRecentActivityAndDatabaseAuthorization(t *testing.T) {

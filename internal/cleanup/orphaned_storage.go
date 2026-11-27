@@ -17,6 +17,7 @@ import (
 )
 
 const (
+	orphanedStorageJobName    = "orphaned-storage"
 	temporaryUploadRetention  = 24 * time.Hour
 	orphanFolderBatchSize     = 200
 	temporaryUploadBatchSize  = 200
@@ -51,6 +52,14 @@ func (c *orphanErrorCollector) err() error {
 }
 
 func (s *Service) RunOrphanedStorage(ctx context.Context) (int, error) {
+	claimed, err := s.locker.ClaimRun(ctx, orphanedStorageJobName, s.now(), orphanedStorageInterval)
+	if err != nil {
+		return 0, fmt.Errorf("claim orphaned storage run: %w", err)
+	}
+	if !claimed {
+		s.logger.Debug().Msg("orphaned storage scan skipped: another replica started it this interval")
+		return 0, nil
+	}
 	gracePeriod := s.config.OrphanedStorageGracePeriod
 	if gracePeriod <= 0 {
 		gracePeriod = time.Duration(config.DefaultOrphanedStorageGraceHours) * time.Hour

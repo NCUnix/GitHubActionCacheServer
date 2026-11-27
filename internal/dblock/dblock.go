@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
@@ -71,6 +72,43 @@ func (l *Locker) tryLockRow(ctx context.Context, name string) (*Lock, bool, erro
 		return nil, false, fmt.Errorf("check job lock %q: %w", name, err)
 	}
 	return nil, exists, nil
+}
+
+// ClaimRun reports whether this replica should start name's run: it records
+// now as the start unless a run started within interval. A nil Locker always claims.
+func (l *Locker) ClaimRun(ctx context.Context, name string, now time.Time, interval time.Duration) (bool, error) {
+	if l == nil {
+		return true, nil
+	}
+	affected, err := l.db.JobLock.Update().
+		Where(
+			joblock.ID(name),
+			joblock.Or(joblock.LastStartedAtIsNil(), joblock.LastStartedAtLTE(now.Add(-interval).UnixMilli())),
+		).
+		SetLastStartedAt(now.UnixMilli()).
+		Save(ctx)
+	if err != nil {
+		return false, fmt.Errorf("claim job %q run: %w", name, err)
+	}
+	if affected == 1 {
+		return true, nil
+	}
+	// Check before inserting so routine skips do not log a unique violation on the server.
+	exists, err := l.db.JobLock.Query().Where(joblock.ID(name)).Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check job %q run: %w", name, err)
+	}
+	if exists {
+		return false, nil
+	}
+	err = l.db.JobLock.Create().SetID(name).SetLastStartedAt(now.UnixMilli()).Exec(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if ent.IsConstraintError(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("create job %q run: %w", name, err)
 }
 
 // Check returns an error when the transaction holding the lock is no longer usable.

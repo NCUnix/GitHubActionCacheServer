@@ -27,6 +27,33 @@ func (_u *JobLockUpdate) Where(ps ...predicate.JobLock) *JobLockUpdate {
 	return _u
 }
 
+// SetLastStartedAt sets the "lastStartedAt" field.
+func (_u *JobLockUpdate) SetLastStartedAt(v int64) *JobLockUpdate {
+	_u.mutation.ResetLastStartedAt()
+	_u.mutation.SetLastStartedAt(v)
+	return _u
+}
+
+// SetNillableLastStartedAt sets the "lastStartedAt" field if the given value is not nil.
+func (_u *JobLockUpdate) SetNillableLastStartedAt(v *int64) *JobLockUpdate {
+	if v != nil {
+		_u.SetLastStartedAt(*v)
+	}
+	return _u
+}
+
+// AddLastStartedAt adds value to the "lastStartedAt" field.
+func (_u *JobLockUpdate) AddLastStartedAt(v int64) *JobLockUpdate {
+	_u.mutation.AddLastStartedAt(v)
+	return _u
+}
+
+// ClearLastStartedAt clears the value of the "lastStartedAt" field.
+func (_u *JobLockUpdate) ClearLastStartedAt() *JobLockUpdate {
+	_u.mutation.ClearLastStartedAt()
+	return _u
+}
+
 // Mutation returns the JobLockMutation object of the builder.
 func (_u *JobLockUpdate) Mutation() *JobLockMutation {
 	return _u.mutation
@@ -68,6 +95,15 @@ func (_u *JobLockUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			}
 		}
 	}
+	if value, ok := _u.mutation.LastStartedAt(); ok {
+		_spec.SetField(joblock.FieldLastStartedAt, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedLastStartedAt(); ok {
+		_spec.AddField(joblock.FieldLastStartedAt, field.TypeInt64, value)
+	}
+	if _u.mutation.LastStartedAtCleared() {
+		_spec.ClearField(joblock.FieldLastStartedAt, field.TypeInt64)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{joblock.Label}
@@ -86,6 +122,33 @@ type JobLockUpdateOne struct {
 	fields   []string
 	hooks    []Hook
 	mutation *JobLockMutation
+}
+
+// SetLastStartedAt sets the "lastStartedAt" field.
+func (_u *JobLockUpdateOne) SetLastStartedAt(v int64) *JobLockUpdateOne {
+	_u.mutation.ResetLastStartedAt()
+	_u.mutation.SetLastStartedAt(v)
+	return _u
+}
+
+// SetNillableLastStartedAt sets the "lastStartedAt" field if the given value is not nil.
+func (_u *JobLockUpdateOne) SetNillableLastStartedAt(v *int64) *JobLockUpdateOne {
+	if v != nil {
+		_u.SetLastStartedAt(*v)
+	}
+	return _u
+}
+
+// AddLastStartedAt adds value to the "lastStartedAt" field.
+func (_u *JobLockUpdateOne) AddLastStartedAt(v int64) *JobLockUpdateOne {
+	_u.mutation.AddLastStartedAt(v)
+	return _u
+}
+
+// ClearLastStartedAt clears the value of the "lastStartedAt" field.
+func (_u *JobLockUpdateOne) ClearLastStartedAt() *JobLockUpdateOne {
+	_u.mutation.ClearLastStartedAt()
+	return _u
 }
 
 // Mutation returns the JobLockMutation object of the builder.
@@ -158,6 +221,15 @@ func (_u *JobLockUpdateOne) sqlSave(ctx context.Context) (_node *JobLock, err er
 				ps[i](selector)
 			}
 		}
+	}
+	if value, ok := _u.mutation.LastStartedAt(); ok {
+		_spec.SetField(joblock.FieldLastStartedAt, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedLastStartedAt(); ok {
+		_spec.AddField(joblock.FieldLastStartedAt, field.TypeInt64, value)
+	}
+	if _u.mutation.LastStartedAtCleared() {
+		_spec.ClearField(joblock.FieldLastStartedAt, field.TypeInt64)
 	}
 	_node = &JobLock{config: _u.config}
 	_spec.Assign = _node.assignValues

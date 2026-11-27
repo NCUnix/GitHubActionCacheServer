@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/NCUnix/GitHubActionCacheServer/internal/config"
+	"github.com/NCUnix/GitHubActionCacheServer/internal/dblock"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/cacheentry"
 	"github.com/NCUnix/GitHubActionCacheServer/internal/ent/predicate"
@@ -33,6 +34,7 @@ type Service struct {
 	storage   storage.Adapter
 	config    config.CleanupConfig
 	lifecycle *storagelifecycle.Service
+	locker    *dblock.Locker
 	now       func() time.Time
 	logger    zerolog.Logger
 	metrics   metrics.Recorder
@@ -43,6 +45,7 @@ type Options struct {
 	Storage   storage.Adapter
 	Config    config.CleanupConfig
 	Lifecycle *storagelifecycle.Service
+	Locker    *dblock.Locker
 	Now       func() time.Time
 	Logger    *zerolog.Logger
 	Metrics   metrics.Recorder
@@ -70,6 +73,7 @@ func NewService(options Options) *Service {
 		storage:   options.Storage,
 		config:    options.Config,
 		lifecycle: lifecycle,
+		locker:    options.Locker,
 		now:       now,
 		logger:    logger,
 		metrics:   metricsRecorder,

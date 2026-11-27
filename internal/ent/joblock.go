@@ -13,10 +13,12 @@ import (
 
 // JobLock is the model entity for the JobLock schema.
 type JobLock struct {
-	config
+	config `json:"-"`
 	// ID of the ent.
-	ID           string `json:"id,omitempty"`
-	selectValues sql.SelectValues
+	ID string `json:"id,omitempty"`
+	// LastStartedAt holds the value of the "lastStartedAt" field.
+	LastStartedAt *int64 `json:"lastStartedAt,omitempty"`
+	selectValues  sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -24,6 +26,8 @@ func (*JobLock) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case joblock.FieldLastStartedAt:
+			values[i] = new(sql.NullInt64)
 		case joblock.FieldID:
 			values[i] = new(sql.NullString)
 		default:
@@ -46,6 +50,13 @@ func (_m *JobLock) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field id", values[i])
 			} else if value.Valid {
 				_m.ID = value.String
+			}
+		case joblock.FieldLastStartedAt:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field lastStartedAt", values[i])
+			} else if value.Valid {
+				_m.LastStartedAt = new(int64)
+				*_m.LastStartedAt = value.Int64
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -82,7 +93,11 @@ func (_m *JobLock) Unwrap() *JobLock {
 func (_m *JobLock) String() string {
 	var builder strings.Builder
 	builder.WriteString("JobLock(")
-	builder.WriteString(fmt.Sprintf("id=%v", _m.ID))
+	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
+	if v := _m.LastStartedAt; v != nil {
+		builder.WriteString("lastStartedAt=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

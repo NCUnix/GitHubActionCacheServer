@@ -18,6 +18,20 @@ type JobLockCreate struct {
 	hooks    []Hook
 }
 
+// SetLastStartedAt sets the "lastStartedAt" field.
+func (_c *JobLockCreate) SetLastStartedAt(v int64) *JobLockCreate {
+	_c.mutation.SetLastStartedAt(v)
+	return _c
+}
+
+// SetNillableLastStartedAt sets the "lastStartedAt" field if the given value is not nil.
+func (_c *JobLockCreate) SetNillableLastStartedAt(v *int64) *JobLockCreate {
+	if v != nil {
+		_c.SetLastStartedAt(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *JobLockCreate) SetID(v string) *JobLockCreate {
 	_c.mutation.SetID(v)
@@ -97,6 +111,10 @@ func (_c *JobLockCreate) createSpec() (*JobLock, *sqlgraph.CreateSpec) {
 	if id, ok := _c.mutation.ID(); ok {
 		_node.ID = id
 		_spec.ID.Value = id
+	}
+	if value, ok := _c.mutation.LastStartedAt(); ok {
+		_spec.SetField(joblock.FieldLastStartedAt, field.TypeInt64, value)
+		_node.LastStartedAt = &value
 	}
 	return _node, _spec
 }
